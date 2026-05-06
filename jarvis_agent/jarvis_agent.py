@@ -28,8 +28,9 @@ import subprocess
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 app = FastAPI(title="JARVIS Local Agent")
@@ -41,6 +42,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Chrome's Private Network Access requires this header so an HTTPS page
+# (the JARVIS web UI) is allowed to call http://127.0.0.1.
+@app.middleware("http")
+async def private_network_access(request: Request, call_next):
+    if request.method == "OPTIONS":
+        resp = Response(status_code=204)
+    else:
+        resp = await call_next(request)
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "*"
+    return resp
 
 IS_WIN = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
