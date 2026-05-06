@@ -43,8 +43,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Chrome's Private Network Access requires this header so an HTTPS page
-# (the JARVIS web UI) is allowed to call http://127.0.0.1.
+# Chrome's Private Network Access requires these headers so an HTTPS page
+# (the JARVIS web UI) is allowed to call http://127.0.0.1 / localhost.
 @app.middleware("http")
 async def private_network_access(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -55,6 +55,7 @@ async def private_network_access(request: Request, call_next):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "*"
     resp.headers["Access-Control-Allow-Headers"] = "*"
+    resp.headers["Access-Control-Max-Age"] = "86400"
     return resp
 
 IS_WIN = platform.system() == "Windows"
