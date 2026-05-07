@@ -44,6 +44,46 @@ _browser_state = {
     "page": None,
 }
 
+def _run_current_python_module(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run a Python module using the exact interpreter that launched this agent."""
+    return subprocess.run(
+        [sys.executable, "-m", *args],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
+def _import_sync_playwright():
+    """Import Playwright, installing the Python package into this interpreter if needed."""
+    try:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError as first_error:
+        install = _run_current_python_module("pip", "install", "playwright")
+        if install.returncode != 0:
+            raise HTTPException(
+                500,
+                "Playwright is not installed for the Python interpreter running this agent. "
+                f"Agent Python: {sys.executable}\n"
+                f"Install failed:\n{install.stdout}\n{install.stderr}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install playwright\n'
+                f'"{sys.executable}" -m playwright install chromium',
+            ) from first_error
+        try:
+            from playwright.sync_api import sync_playwright
+            return sync_playwright
+        except ImportError as second_error:
+            raise HTTPException(
+                500,
+                "Playwright still cannot be imported by the agent after install. "
+                f"Agent Python: {sys.executable}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install playwright\n'
+                f'"{sys.executable}" -m playwright install chromium',
+            ) from second_error
+
 CURSOR_OVERLAY_JS = r"""
 (() => {
   if (window.__jarvisCursor) return;
@@ -80,10 +120,7 @@ def _ensure_browser(headless: bool = False):
             except Exception:
                 _browser_state["page"] = None
 
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
-            raise HTTPException(500, "Playwright not installed. Run: pip install playwright && playwright install chromium")
+        sync_playwright = _import_sync_playwright()
 
         pw = sync_playwright().start()
         launch_errors = []
@@ -91,6 +128,25 @@ def _ensure_browser(headless: bool = False):
             browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
         except Exception as e:
             launch_errors.append(f"bundled Chromium failed: {e}")
+            installed = _run_current_python_module("playwright", "install", "chromium")
+            if installed.returncode == 0:
+                try:
+                    browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
+                except Exception as retry_error:
+                    launch_errors.append(f"bundled Chromium after install failed: {retry_error}")
+                else:
+                    context = browser.new_context(no_viewport=True)
+                    page = context.new_page()
+                    page.goto("about:blank")
+                    context.add_init_script(CURSOR_OVERLAY_JS)
+                    try:
+                        page.evaluate(CURSOR_OVERLAY_JS)
+                    except Exception:
+                        pass
+                    _browser_state.update({"playwright": pw, "browser": browser, "context": context, "page": page})
+                    return page
+            else:
+                launch_errors.append(f"python -m playwright install chromium failed: {installed.stdout}\n{installed.stderr}")
             try:
                 browser = pw.chromium.launch(channel="chrome", headless=headless, args=["--start-maximized"])
             except Exception as chrome_error:
@@ -101,8 +157,12 @@ def _ensure_browser(headless: bool = False):
                     pass
                 raise HTTPException(
                     500,
-                    "Could not launch a browser. Run this in the same terminal first: "
-                    "python -m playwright install chromium\n\n" + "\n\n".join(launch_errors),
+                    "Could not launch a browser. The agent uses this Python interpreter: "
+                    f"{sys.executable}\n"
+                    "Run these exact commands in the agent terminal, then restart jarvis_agent.py:\n"
+                    f'"{sys.executable}" -m pip install playwright\n'
+                    f'"{sys.executable}" -m playwright install chromium\n\n'
+                    + "\n\n".join(launch_errors),
                 )
         context = browser.new_context(no_viewport=True)
         page = context.new_page()
