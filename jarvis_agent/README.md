@@ -8,8 +8,7 @@ disk, install software, etc.
 ## Setup
 
 ```bash
-pip install fastapi uvicorn psutil playwright
-playwright install chromium
+python -m pip install fastapi uvicorn psutil selenium
 python jarvis_agent.py
 ```
 
@@ -28,7 +27,7 @@ status indicator should turn cyan within ~5 seconds.
 | `read_file` | Reads a text file |
 | `write_file` | Writes/overwrites a text file |
 | `system_info` | Returns OS/CPU/RAM/disk info |
-| `browser_*` | **Cowork mode** — JARVIS drives a Chromium window with a glowing red cursor overlay; you use the same window with your normal cursor |
+| `browser_*` | **Cowork mode** — JARVIS drives your installed Chrome with Selenium and a glowing red cursor overlay; you use the same window with your normal cursor |
 
 ## ⚠️ Security
 

@@ -9,7 +9,7 @@ You have access to tools that let you control the user's computer through a loca
 - open_path(path), open_url(url), list_dir(path), search_files(root, query), read_file(path), write_file(path, content), system_info().
 
 ## BROWSER COWORK MODE 🖱️
-You can drive a real Chromium window alongside the user. They see your moves via a glowing red "JARVIS" cursor overlaid on the page. They use the same window with their normal cursor — you cowork.
+You can drive a real Chrome window alongside the user through the local Selenium agent. They see your moves via a glowing red "JARVIS" cursor overlaid on the page. They use the same window with their normal cursor — you cowork.
 - browser_open(): Launch the cowork window (does this once on first use).
 - browser_goto(url): Navigate.
 - browser_read(): Get the page's text + a list of clickable controls with selectors. ALWAYS call this before clicking/typing on a fresh page so you know what's there.
@@ -139,7 +139,7 @@ export const Route = createFileRoute("/api/chat")({
                 parameters: { type: "object", properties: {} },
               },
             },
-            { type: "function", function: { name: "browser_open", description: "Launch the cowork Chromium window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
+            { type: "function", function: { name: "browser_open", description: "Launch the cowork Chrome window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
             { type: "function", function: { name: "browser_goto", description: "Navigate the cowork browser to a URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
             { type: "function", function: { name: "browser_read", description: "Read the current page: text + clickable controls with selectors. Call before clicking/typing.", parameters: { type: "object", properties: {} } } },
             { type: "function", function: { name: "browser_click", description: "Click an element. Prefer 'selector' from browser_read; use 'text' for visible-text matching.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" } } } } },
