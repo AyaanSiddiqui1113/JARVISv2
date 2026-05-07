@@ -294,7 +294,138 @@ def system_info():
     return info
 
 
-if __name__ == "__main__":
+# ===================== BROWSER COWORK =====================
+class BrowserGoto(BaseModel):
+    url: str
+
+class BrowserClick(BaseModel):
+    selector: str | None = None
+    text: str | None = None
+
+class BrowserType(BaseModel):
+    selector: str
+    text: str
+    submit: bool = False
+
+class BrowserScroll(BaseModel):
+    dy: int = 400
+
+class BrowserKey(BaseModel):
+    key: str
+
+
+@app.post("/tool/browser_open")
+def browser_open():
+    page = _ensure_browser(headless=False)
+    return {"ok": True, "url": page.url, "title": page.title()}
+
+
+@app.post("/tool/browser_goto")
+def browser_goto(arg: BrowserGoto):
+    page = _ensure_browser(headless=False)
+    url = arg.url if "://" in arg.url else f"https://{arg.url}"
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.evaluate(CURSOR_OVERLAY_JS)
+    except Exception:
+        pass
+    return {"ok": True, "url": page.url, "title": page.title()}
+
+
+@app.post("/tool/browser_click")
+def browser_click(arg: BrowserClick):
+    page = _ensure_browser(headless=False)
+    locator = page.locator(arg.selector) if arg.selector else page.get_by_text(arg.text or "", exact=False).first
+    try:
+        box = locator.bounding_box(timeout=5000)
+        if box:
+            cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+            _move_cursor(page, cx, cy)
+            page.wait_for_timeout(200)
+            _flash_cursor(page)
+        locator.click(timeout=5000)
+        return {"ok": True, "clicked": arg.selector or arg.text}
+    except Exception as e:
+        raise HTTPException(500, f"Click failed: {e}")
+
+
+@app.post("/tool/browser_type")
+def browser_type(arg: BrowserType):
+    page = _ensure_browser(headless=False)
+    try:
+        loc = page.locator(arg.selector)
+        box = loc.bounding_box(timeout=5000)
+        if box:
+            _move_cursor(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(150)
+            _flash_cursor(page)
+        loc.click(timeout=5000)
+        loc.fill("")
+        loc.type(arg.text, delay=30)
+        if arg.submit:
+            loc.press("Enter")
+        return {"ok": True, "typed": arg.text, "into": arg.selector}
+    except Exception as e:
+        raise HTTPException(500, f"Type failed: {e}")
+
+
+@app.post("/tool/browser_press")
+def browser_press(arg: BrowserKey):
+    page = _ensure_browser(headless=False)
+    page.keyboard.press(arg.key)
+    return {"ok": True, "pressed": arg.key}
+
+
+@app.post("/tool/browser_scroll")
+def browser_scroll(arg: BrowserScroll):
+    page = _ensure_browser(headless=False)
+    page.evaluate(f"window.scrollBy(0, {int(arg.dy)})")
+    return {"ok": True, "dy": arg.dy}
+
+
+@app.post("/tool/browser_read")
+def browser_read():
+    page = _ensure_browser(headless=False)
+    try:
+        return page.evaluate(r"""
+() => {
+  const text = (document.body.innerText || '').slice(0, 4000);
+  const els = [];
+  document.querySelectorAll('a,button,input,textarea,select,[role=button]').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    if (r.bottom < 0 || r.top > innerHeight + 200) return;
+    els.push({
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,80),
+      id: el.id || null,
+      name: el.getAttribute('name') || null,
+      type: el.getAttribute('type') || null,
+      selector: el.id ? '#' + CSS.escape(el.id) :
+                el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]` : null,
+    });
+  });
+  return { url: location.href, title: document.title, text, controls: els.slice(0, 60) };
+}
+""")
+    except Exception as e:
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+@app.post("/tool/browser_close")
+def browser_close():
+    with _browser_lock:
+        try:
+            if _browser_state["browser"]:
+                _browser_state["browser"].close()
+            if _browser_state["playwright"]:
+                _browser_state["playwright"].stop()
+        finally:
+            _browser_state.update({"playwright": None, "browser": None, "context": None, "page": None})
+    return {"ok": True}
+
+
+
     import uvicorn
     print("=" * 60)
     print("  J.A.R.V.I.S. Local Agent")
