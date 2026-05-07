@@ -25,6 +25,7 @@ import sys
 import shutil
 import platform
 import subprocess
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -32,6 +33,85 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+# ---- Browser cowork (Playwright) ----
+# Lazy-imported so the agent still runs if Playwright isn't installed yet.
+_browser_lock = threading.Lock()
+_browser_state = {
+    "playwright": None,
+    "browser": None,
+    "context": None,
+    "page": None,
+}
+
+CURSOR_OVERLAY_JS = r"""
+(() => {
+  if (window.__jarvisCursor) return;
+  const c = document.createElement('div');
+  c.id = '__jarvis_cursor';
+  c.style.cssText = [
+    'position:fixed','left:-100px','top:-100px','width:22px','height:22px',
+    'border-radius:50%','background:radial-gradient(circle,#ff2a2a 0%,#ff0000 50%,rgba(255,0,0,0) 80%)',
+    'box-shadow:0 0 18px 6px rgba(255,40,40,0.85),0 0 40px 12px rgba(255,0,0,0.45)',
+    'pointer-events:none','z-index:2147483647','transition:left 120ms linear,top 120ms linear',
+    'border:2px solid #fff'
+  ].join(';');
+  const label = document.createElement('div');
+  label.textContent = 'JARVIS';
+  label.style.cssText = 'position:absolute;left:26px;top:6px;font:bold 10px monospace;color:#fff;text-shadow:0 0 4px #ff0000;letter-spacing:2px;';
+  c.appendChild(label);
+  document.documentElement.appendChild(c);
+  window.__jarvisCursor = c;
+  window.__jarvisMove = (x,y) => { c.style.left = (x-11)+'px'; c.style.top = (y-11)+'px'; };
+  window.__jarvisFlash = () => {
+    c.animate([{transform:'scale(1)'},{transform:'scale(1.8)'},{transform:'scale(1)'}],{duration:300});
+  };
+})();
+"""
+
+def _ensure_browser(headless: bool = False):
+    """Start Chromium (once) and return the active page."""
+    with _browser_lock:
+        if _browser_state["page"] is not None:
+            try:
+                # Cheap liveness check
+                _ = _browser_state["page"].url
+                return _browser_state["page"]
+            except Exception:
+                _browser_state["page"] = None
+
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise HTTPException(500, "Playwright not installed. Run: pip install playwright && playwright install chromium")
+
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
+        context = browser.new_context(no_viewport=True)
+        page = context.new_page()
+        page.goto("about:blank")
+        # Re-inject cursor on every navigation
+        context.add_init_script(CURSOR_OVERLAY_JS)
+        try:
+            page.evaluate(CURSOR_OVERLAY_JS)
+        except Exception:
+            pass
+        _browser_state.update({"playwright": pw, "browser": browser, "context": context, "page": page})
+        return page
+
+
+def _move_cursor(page, x: float, y: float):
+    try:
+        page.evaluate("([x,y]) => window.__jarvisMove && window.__jarvisMove(x,y)", [x, y])
+    except Exception:
+        pass
+
+
+def _flash_cursor(page):
+    try:
+        page.evaluate("() => window.__jarvisFlash && window.__jarvisFlash()")
+    except Exception:
+        pass
 
 app = FastAPI(title="JARVIS Local Agent")
 
@@ -214,11 +294,142 @@ def system_info():
     return info
 
 
+# ===================== BROWSER COWORK =====================
+class BrowserGoto(BaseModel):
+    url: str
+
+class BrowserClick(BaseModel):
+    selector: str | None = None
+    text: str | None = None
+
+class BrowserType(BaseModel):
+    selector: str
+    text: str
+    submit: bool = False
+
+class BrowserScroll(BaseModel):
+    dy: int = 400
+
+class BrowserKey(BaseModel):
+    key: str
+
+
+@app.post("/tool/browser_open")
+def browser_open():
+    page = _ensure_browser(headless=False)
+    return {"ok": True, "url": page.url, "title": page.title()}
+
+
+@app.post("/tool/browser_goto")
+def browser_goto(arg: BrowserGoto):
+    page = _ensure_browser(headless=False)
+    url = arg.url if "://" in arg.url else f"https://{arg.url}"
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.evaluate(CURSOR_OVERLAY_JS)
+    except Exception:
+        pass
+    return {"ok": True, "url": page.url, "title": page.title()}
+
+
+@app.post("/tool/browser_click")
+def browser_click(arg: BrowserClick):
+    page = _ensure_browser(headless=False)
+    locator = page.locator(arg.selector) if arg.selector else page.get_by_text(arg.text or "", exact=False).first
+    try:
+        box = locator.bounding_box(timeout=5000)
+        if box:
+            cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+            _move_cursor(page, cx, cy)
+            page.wait_for_timeout(200)
+            _flash_cursor(page)
+        locator.click(timeout=5000)
+        return {"ok": True, "clicked": arg.selector or arg.text}
+    except Exception as e:
+        raise HTTPException(500, f"Click failed: {e}")
+
+
+@app.post("/tool/browser_type")
+def browser_type(arg: BrowserType):
+    page = _ensure_browser(headless=False)
+    try:
+        loc = page.locator(arg.selector)
+        box = loc.bounding_box(timeout=5000)
+        if box:
+            _move_cursor(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(150)
+            _flash_cursor(page)
+        loc.click(timeout=5000)
+        loc.fill("")
+        loc.type(arg.text, delay=30)
+        if arg.submit:
+            loc.press("Enter")
+        return {"ok": True, "typed": arg.text, "into": arg.selector}
+    except Exception as e:
+        raise HTTPException(500, f"Type failed: {e}")
+
+
+@app.post("/tool/browser_press")
+def browser_press(arg: BrowserKey):
+    page = _ensure_browser(headless=False)
+    page.keyboard.press(arg.key)
+    return {"ok": True, "pressed": arg.key}
+
+
+@app.post("/tool/browser_scroll")
+def browser_scroll(arg: BrowserScroll):
+    page = _ensure_browser(headless=False)
+    page.evaluate(f"window.scrollBy(0, {int(arg.dy)})")
+    return {"ok": True, "dy": arg.dy}
+
+
+@app.post("/tool/browser_read")
+def browser_read():
+    page = _ensure_browser(headless=False)
+    try:
+        return page.evaluate(r"""
+() => {
+  const text = (document.body.innerText || '').slice(0, 4000);
+  const els = [];
+  document.querySelectorAll('a,button,input,textarea,select,[role=button]').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    if (r.bottom < 0 || r.top > innerHeight + 200) return;
+    els.push({
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,80),
+      id: el.id || null,
+      name: el.getAttribute('name') || null,
+      type: el.getAttribute('type') || null,
+      selector: el.id ? '#' + CSS.escape(el.id) :
+                el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]` : null,
+    });
+  });
+  return { url: location.href, title: document.title, text, controls: els.slice(0, 60) };
+}
+""")
+    except Exception as e:
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+@app.post("/tool/browser_close")
+def browser_close():
+    with _browser_lock:
+        try:
+            if _browser_state["browser"]:
+                _browser_state["browser"].close()
+            if _browser_state["playwright"]:
+                _browser_state["playwright"].stop()
+        finally:
+            _browser_state.update({"playwright": None, "browser": None, "context": None, "page": None})
+    return {"ok": True}
+
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
     print("  J.A.R.V.I.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
+    print("  Browser cowork: ask JARVIS to 'open a browser and...'")
     print("  Keep this window open while using the JARVIS web UI.")
     print("=" * 60)
     uvicorn.run(app, host="127.0.0.1", port=7337, log_level="info")
