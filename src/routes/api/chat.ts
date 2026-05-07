@@ -138,6 +138,7 @@ export const Route = createFileRoute("/api/chat")({
                 description: "Get OS, CPU, RAM, and disk info from the local machine.",
                 parameters: { type: "object", properties: {} },
               },
+            },
             { type: "function", function: { name: "browser_open", description: "Launch the cowork Chromium window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
             { type: "function", function: { name: "browser_goto", description: "Navigate the cowork browser to a URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
             { type: "function", function: { name: "browser_read", description: "Read the current page: text + clickable controls with selectors. Call before clicking/typing.", parameters: { type: "object", properties: {} } } },
