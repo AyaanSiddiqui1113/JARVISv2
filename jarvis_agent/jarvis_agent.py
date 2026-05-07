@@ -86,7 +86,24 @@ def _ensure_browser(headless: bool = False):
             raise HTTPException(500, "Playwright not installed. Run: pip install playwright && playwright install chromium")
 
         pw = sync_playwright().start()
-        browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
+        launch_errors = []
+        try:
+            browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
+        except Exception as e:
+            launch_errors.append(f"bundled Chromium failed: {e}")
+            try:
+                browser = pw.chromium.launch(channel="chrome", headless=headless, args=["--start-maximized"])
+            except Exception as chrome_error:
+                launch_errors.append(f"installed Chrome failed: {chrome_error}")
+                try:
+                    pw.stop()
+                except Exception:
+                    pass
+                raise HTTPException(
+                    500,
+                    "Could not launch a browser. Run this in the same terminal first: "
+                    "python -m playwright install chromium\n\n" + "\n\n".join(launch_errors),
+                )
         context = browser.new_context(no_viewport=True)
         page = context.new_page()
         page.goto("about:blank")
