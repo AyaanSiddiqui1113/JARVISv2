@@ -34,15 +34,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-# ---- Browser cowork (Playwright) ----
-# Lazy-imported so the agent still runs if Playwright isn't installed yet.
+# ---- Browser cowork (Selenium / installed Chrome) ----
+# Lazy-imported so the agent still runs if Selenium isn't installed yet.
 _browser_lock = threading.Lock()
 _browser_state = {
-    "playwright": None,
-    "browser": None,
-    "context": None,
-    "page": None,
+    "driver": None,
 }
+
 
 def _run_current_python_module(*args: str) -> subprocess.CompletedProcess[str]:
     """Run a Python module using the exact interpreter that launched this agent."""
@@ -54,35 +52,44 @@ def _run_current_python_module(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _import_sync_playwright():
-    """Import Playwright, installing the Python package into this interpreter if needed."""
+def _import_selenium():
+    """Import Selenium, installing it into this interpreter if needed."""
     try:
-        from playwright.sync_api import sync_playwright
-        return sync_playwright
+        from selenium import webdriver
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.common.action_chains import ActionChains
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        return webdriver, By, Keys, ActionChains, WebDriverWait, EC
     except ImportError as first_error:
-        install = _run_current_python_module("pip", "install", "playwright")
+        install = _run_current_python_module("pip", "install", "selenium")
         if install.returncode != 0:
             raise HTTPException(
                 500,
-                "Playwright is not installed for the Python interpreter running this agent. "
+                "Selenium is not installed for the Python interpreter running this agent. "
                 f"Agent Python: {sys.executable}\n"
                 f"Install failed:\n{install.stdout}\n{install.stderr}\n"
                 "Fix manually with:\n"
-                f'"{sys.executable}" -m pip install playwright\n'
-                f'"{sys.executable}" -m playwright install chromium',
+                f'"{sys.executable}" -m pip install selenium',
             ) from first_error
         try:
-            from playwright.sync_api import sync_playwright
-            return sync_playwright
+            from selenium import webdriver
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            return webdriver, By, Keys, ActionChains, WebDriverWait, EC
         except ImportError as second_error:
             raise HTTPException(
                 500,
-                "Playwright still cannot be imported by the agent after install. "
+                "Selenium still cannot be imported by the agent after install. "
                 f"Agent Python: {sys.executable}\n"
                 "Fix manually with:\n"
-                f'"{sys.executable}" -m pip install playwright\n'
-                f'"{sys.executable}" -m playwright install chromium',
+                f'"{sys.executable}" -m pip install selenium',
             ) from second_error
+
 
 CURSOR_OVERLAY_JS = r"""
 (() => {
@@ -109,86 +116,106 @@ CURSOR_OVERLAY_JS = r"""
 })();
 """
 
+
 def _ensure_browser(headless: bool = False):
-    """Start Chromium (once) and return the active page."""
+    """Start installed Chrome through Selenium (once) and return the driver."""
     with _browser_lock:
-        if _browser_state["page"] is not None:
+        driver = _browser_state.get("driver")
+        if driver is not None:
             try:
-                # Cheap liveness check
-                _ = _browser_state["page"].url
-                return _browser_state["page"]
+                _ = driver.current_url
+                _inject_cursor(driver)
+                return driver
             except Exception:
-                _browser_state["page"] = None
+                _browser_state["driver"] = None
 
-        sync_playwright = _import_sync_playwright()
+        webdriver, _By, _Keys, _ActionChains, _WebDriverWait, _EC = _import_selenium()
+        options = webdriver.ChromeOptions()
+        if headless:
+            options.add_argument("--headless=new")
+        options.add_argument("--start-maximized")
+        options.add_argument("--disable-infobars")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
 
-        pw = sync_playwright().start()
         launch_errors = []
         try:
-            browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
-        except Exception as e:
-            launch_errors.append(f"bundled Chromium failed: {e}")
-            installed = _run_current_python_module("playwright", "install", "chromium")
-            if installed.returncode == 0:
-                try:
-                    browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
-                except Exception as retry_error:
-                    launch_errors.append(f"bundled Chromium after install failed: {retry_error}")
-                else:
-                    context = browser.new_context(no_viewport=True)
-                    page = context.new_page()
-                    page.goto("about:blank")
-                    context.add_init_script(CURSOR_OVERLAY_JS)
-                    try:
-                        page.evaluate(CURSOR_OVERLAY_JS)
-                    except Exception:
-                        pass
-                    _browser_state.update({"playwright": pw, "browser": browser, "context": context, "page": page})
-                    return page
-            else:
-                launch_errors.append(f"python -m playwright install chromium failed: {installed.stdout}\n{installed.stderr}")
+            driver = webdriver.Chrome(options=options)
+        except Exception as chrome_error:
+            launch_errors.append(f"installed Chrome via Selenium failed: {chrome_error}")
             try:
-                browser = pw.chromium.launch(channel="chrome", headless=headless, args=["--start-maximized"])
-            except Exception as chrome_error:
-                launch_errors.append(f"installed Chrome failed: {chrome_error}")
-                try:
-                    pw.stop()
-                except Exception:
-                    pass
+                edge_options = webdriver.EdgeOptions()
+                if headless:
+                    edge_options.add_argument("--headless=new")
+                edge_options.add_argument("--start-maximized")
+                driver = webdriver.Edge(options=edge_options)
+            except Exception as edge_error:
+                launch_errors.append(f"Edge fallback via Selenium failed: {edge_error}")
                 raise HTTPException(
                     500,
-                    "Could not launch a browser. The agent uses this Python interpreter: "
-                    f"{sys.executable}\n"
-                    "Run these exact commands in the agent terminal, then restart jarvis_agent.py:\n"
-                    f'"{sys.executable}" -m pip install playwright\n'
-                    f'"{sys.executable}" -m playwright install chromium\n\n'
+                    "Could not launch Chrome with Selenium. Make sure normal Google Chrome is installed, then run:\n"
+                    f'"{sys.executable}" -m pip install --upgrade selenium\n\n'
                     + "\n\n".join(launch_errors),
                 )
-        context = browser.new_context(no_viewport=True)
-        page = context.new_page()
-        page.goto("about:blank")
-        # Re-inject cursor on every navigation
-        context.add_init_script(CURSOR_OVERLAY_JS)
-        try:
-            page.evaluate(CURSOR_OVERLAY_JS)
-        except Exception:
-            pass
-        _browser_state.update({"playwright": pw, "browser": browser, "context": context, "page": page})
-        return page
+
+        driver.get("about:blank")
+        _inject_cursor(driver)
+        _browser_state["driver"] = driver
+        return driver
 
 
-def _move_cursor(page, x: float, y: float):
+def _inject_cursor(driver):
     try:
-        page.evaluate("([x,y]) => window.__jarvisMove && window.__jarvisMove(x,y)", [x, y])
+        driver.execute_script(CURSOR_OVERLAY_JS)
     except Exception:
         pass
 
 
-def _flash_cursor(page):
+def _move_cursor(driver, x: float, y: float):
     try:
-        page.evaluate("() => window.__jarvisFlash && window.__jarvisFlash()")
+        _inject_cursor(driver)
+        driver.execute_script("window.__jarvisMove && window.__jarvisMove(arguments[0], arguments[1])", float(x), float(y))
     except Exception:
         pass
+
+
+def _flash_cursor(driver):
+    try:
+        _inject_cursor(driver)
+        driver.execute_script("window.__jarvisFlash && window.__jarvisFlash()")
+    except Exception:
+        pass
+
+
+def _xpath_literal(value: str) -> str:
+    if '"' not in value:
+        return f'"{value}"'
+    if "'" not in value:
+        return f"'{value}'"
+    return "concat(" + ", '\"', ".join(f'"{part}"' for part in value.split('"')) + ")"
+
+
+def _find_element(driver, selector: str | None = None, text: str | None = None, clickable: bool = False):
+    _webdriver, By, _Keys, _ActionChains, WebDriverWait, EC = _import_selenium()
+    wait = WebDriverWait(driver, 8)
+    if selector:
+        locator = (By.CSS_SELECTOR, selector)
+    else:
+        needle = _xpath_literal(text or "")
+        locator = (
+            By.XPATH,
+            "//*[self::a or self::button or self::input or self::textarea or self::select or @role='button']"
+            f"[contains(normalize-space(.), {needle}) or contains(@value, {needle}) "
+            f"or contains(@placeholder, {needle}) or contains(@aria-label, {needle})]",
+        )
+    return wait.until(EC.element_to_be_clickable(locator) if clickable else EC.presence_of_element_located(locator))
+
+
+def _element_center(driver, element):
+    return driver.execute_script(
+        "const r = arguments[0].getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2};",
+        element,
+    )
 
 app = FastAPI(title="JARVIS Local Agent")
 
