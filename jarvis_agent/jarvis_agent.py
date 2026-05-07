@@ -424,8 +424,7 @@ def browser_close():
             _browser_state.update({"playwright": None, "browser": None, "context": None, "page": None})
     return {"ok": True}
 
-
-
+if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
     print("  J.A.R.V.I.S. Local Agent")
