@@ -138,7 +138,14 @@ export const Route = createFileRoute("/api/chat")({
                 description: "Get OS, CPU, RAM, and disk info from the local machine.",
                 parameters: { type: "object", properties: {} },
               },
-            },
+            { type: "function", function: { name: "browser_open", description: "Launch the cowork Chromium window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
+            { type: "function", function: { name: "browser_goto", description: "Navigate the cowork browser to a URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
+            { type: "function", function: { name: "browser_read", description: "Read the current page: text + clickable controls with selectors. Call before clicking/typing.", parameters: { type: "object", properties: {} } } },
+            { type: "function", function: { name: "browser_click", description: "Click an element. Prefer 'selector' from browser_read; use 'text' for visible-text matching.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" } } } } },
+            { type: "function", function: { name: "browser_type", description: "Type into an input. submit=true presses Enter after.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" }, submit: { type: "boolean" } }, required: ["selector", "text"] } } },
+            { type: "function", function: { name: "browser_press", description: "Press a single key (Enter, Tab, Escape, ArrowDown, etc.).", parameters: { type: "object", properties: { key: { type: "string" } }, required: ["key"] } } },
+            { type: "function", function: { name: "browser_scroll", description: "Scroll the page by dy pixels (positive = down).", parameters: { type: "object", properties: { dy: { type: "number" } } } } },
+            { type: "function", function: { name: "browser_close", description: "Close the cowork browser window.", parameters: { type: "object", properties: {} } } },
           ];
 
           const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
