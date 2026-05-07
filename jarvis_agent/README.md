@@ -8,7 +8,8 @@ disk, install software, etc.
 ## Setup
 
 ```bash
-pip install fastapi uvicorn psutil
+pip install fastapi uvicorn psutil playwright
+playwright install chromium
 python jarvis_agent.py
 ```
 
