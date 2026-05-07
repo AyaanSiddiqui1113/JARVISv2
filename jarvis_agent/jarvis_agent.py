@@ -420,34 +420,28 @@ class BrowserKey(BaseModel):
 
 @app.post("/tool/browser_open")
 def browser_open():
-    page = _ensure_browser(headless=False)
-    return {"ok": True, "url": page.url, "title": page.title()}
+    driver = _ensure_browser(headless=False)
+    return {"ok": True, "url": driver.current_url, "title": driver.title, "engine": "selenium-chrome"}
 
 
 @app.post("/tool/browser_goto")
 def browser_goto(arg: BrowserGoto):
-    page = _ensure_browser(headless=False)
+    driver = _ensure_browser(headless=False)
     url = arg.url if "://" in arg.url else f"https://{arg.url}"
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    try:
-        page.evaluate(CURSOR_OVERLAY_JS)
-    except Exception:
-        pass
-    return {"ok": True, "url": page.url, "title": page.title()}
+    driver.get(url)
+    _inject_cursor(driver)
+    return {"ok": True, "url": driver.current_url, "title": driver.title}
 
 
 @app.post("/tool/browser_click")
 def browser_click(arg: BrowserClick):
-    page = _ensure_browser(headless=False)
-    locator = page.locator(arg.selector) if arg.selector else page.get_by_text(arg.text or "", exact=False).first
+    driver = _ensure_browser(headless=False)
     try:
-        box = locator.bounding_box(timeout=5000)
-        if box:
-            cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-            _move_cursor(page, cx, cy)
-            page.wait_for_timeout(200)
-            _flash_cursor(page)
-        locator.click(timeout=5000)
+        element = _find_element(driver, arg.selector, arg.text, clickable=True)
+        center = _element_center(driver, element)
+        _move_cursor(driver, center["x"], center["y"])
+        _flash_cursor(driver)
+        element.click()
         return {"ok": True, "clicked": arg.selector or arg.text}
     except Exception as e:
         raise HTTPException(500, f"Click failed: {e}")
@@ -455,19 +449,18 @@ def browser_click(arg: BrowserClick):
 
 @app.post("/tool/browser_type")
 def browser_type(arg: BrowserType):
-    page = _ensure_browser(headless=False)
+    driver = _ensure_browser(headless=False)
     try:
-        loc = page.locator(arg.selector)
-        box = loc.bounding_box(timeout=5000)
-        if box:
-            _move_cursor(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            page.wait_for_timeout(150)
-            _flash_cursor(page)
-        loc.click(timeout=5000)
-        loc.fill("")
-        loc.type(arg.text, delay=30)
+        _webdriver, _By, Keys, _ActionChains, _WebDriverWait, _EC = _import_selenium()
+        element = _find_element(driver, arg.selector, clickable=True)
+        center = _element_center(driver, element)
+        _move_cursor(driver, center["x"], center["y"])
+        _flash_cursor(driver)
+        element.click()
+        element.send_keys(Keys.CONTROL, "a")
+        element.send_keys(arg.text)
         if arg.submit:
-            loc.press("Enter")
+            element.send_keys(Keys.ENTER)
         return {"ok": True, "typed": arg.text, "into": arg.selector}
     except Exception as e:
         raise HTTPException(500, f"Type failed: {e}")
@@ -475,24 +468,26 @@ def browser_type(arg: BrowserType):
 
 @app.post("/tool/browser_press")
 def browser_press(arg: BrowserKey):
-    page = _ensure_browser(headless=False)
-    page.keyboard.press(arg.key)
+    driver = _ensure_browser(headless=False)
+    _webdriver, _By, Keys, ActionChains, _WebDriverWait, _EC = _import_selenium()
+    key = getattr(Keys, arg.key.upper(), arg.key)
+    ActionChains(driver).send_keys(key).perform()
     return {"ok": True, "pressed": arg.key}
 
 
 @app.post("/tool/browser_scroll")
 def browser_scroll(arg: BrowserScroll):
-    page = _ensure_browser(headless=False)
-    page.evaluate(f"window.scrollBy(0, {int(arg.dy)})")
+    driver = _ensure_browser(headless=False)
+    driver.execute_script("window.scrollBy(0, arguments[0])", int(arg.dy))
     return {"ok": True, "dy": arg.dy}
 
 
 @app.post("/tool/browser_read")
 def browser_read():
-    page = _ensure_browser(headless=False)
+    driver = _ensure_browser(headless=False)
     try:
-        return page.evaluate(r"""
-() => {
+        _inject_cursor(driver)
+        return driver.execute_script(r"""
   const text = (document.body.innerText || '').slice(0, 4000);
   const els = [];
   document.querySelectorAll('a,button,input,textarea,select,[role=button]').forEach(el => {
@@ -510,7 +505,6 @@ def browser_read():
     });
   });
   return { url: location.href, title: document.title, text, controls: els.slice(0, 60) };
-}
 """)
     except Exception as e:
         raise HTTPException(500, f"Read failed: {e}")
@@ -520,12 +514,10 @@ def browser_read():
 def browser_close():
     with _browser_lock:
         try:
-            if _browser_state["browser"]:
-                _browser_state["browser"].close()
-            if _browser_state["playwright"]:
-                _browser_state["playwright"].stop()
+            if _browser_state["driver"]:
+                _browser_state["driver"].quit()
         finally:
-            _browser_state.update({"playwright": None, "browser": None, "context": None, "page": None})
+            _browser_state.update({"driver": None})
     return {"ok": True}
 
 if __name__ == "__main__":
