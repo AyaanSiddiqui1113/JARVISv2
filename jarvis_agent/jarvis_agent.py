@@ -25,6 +25,7 @@ import sys
 import shutil
 import platform
 import subprocess
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -32,6 +33,85 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+# ---- Browser cowork (Playwright) ----
+# Lazy-imported so the agent still runs if Playwright isn't installed yet.
+_browser_lock = threading.Lock()
+_browser_state = {
+    "playwright": None,
+    "browser": None,
+    "context": None,
+    "page": None,
+}
+
+CURSOR_OVERLAY_JS = r"""
+(() => {
+  if (window.__jarvisCursor) return;
+  const c = document.createElement('div');
+  c.id = '__jarvis_cursor';
+  c.style.cssText = [
+    'position:fixed','left:-100px','top:-100px','width:22px','height:22px',
+    'border-radius:50%','background:radial-gradient(circle,#ff2a2a 0%,#ff0000 50%,rgba(255,0,0,0) 80%)',
+    'box-shadow:0 0 18px 6px rgba(255,40,40,0.85),0 0 40px 12px rgba(255,0,0,0.45)',
+    'pointer-events:none','z-index:2147483647','transition:left 120ms linear,top 120ms linear',
+    'border:2px solid #fff'
+  ].join(';');
+  const label = document.createElement('div');
+  label.textContent = 'JARVIS';
+  label.style.cssText = 'position:absolute;left:26px;top:6px;font:bold 10px monospace;color:#fff;text-shadow:0 0 4px #ff0000;letter-spacing:2px;';
+  c.appendChild(label);
+  document.documentElement.appendChild(c);
+  window.__jarvisCursor = c;
+  window.__jarvisMove = (x,y) => { c.style.left = (x-11)+'px'; c.style.top = (y-11)+'px'; };
+  window.__jarvisFlash = () => {
+    c.animate([{transform:'scale(1)'},{transform:'scale(1.8)'},{transform:'scale(1)'}],{duration:300});
+  };
+})();
+"""
+
+def _ensure_browser(headless: bool = False):
+    """Start Chromium (once) and return the active page."""
+    with _browser_lock:
+        if _browser_state["page"] is not None:
+            try:
+                # Cheap liveness check
+                _ = _browser_state["page"].url
+                return _browser_state["page"]
+            except Exception:
+                _browser_state["page"] = None
+
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise HTTPException(500, "Playwright not installed. Run: pip install playwright && playwright install chromium")
+
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=headless, args=["--start-maximized"])
+        context = browser.new_context(no_viewport=True)
+        page = context.new_page()
+        page.goto("about:blank")
+        # Re-inject cursor on every navigation
+        context.add_init_script(CURSOR_OVERLAY_JS)
+        try:
+            page.evaluate(CURSOR_OVERLAY_JS)
+        except Exception:
+            pass
+        _browser_state.update({"playwright": pw, "browser": browser, "context": context, "page": page})
+        return page
+
+
+def _move_cursor(page, x: float, y: float):
+    try:
+        page.evaluate("([x,y]) => window.__jarvisMove && window.__jarvisMove(x,y)", [x, y])
+    except Exception:
+        pass
+
+
+def _flash_cursor(page):
+    try:
+        page.evaluate("() => window.__jarvisFlash && window.__jarvisFlash()")
+    except Exception:
+        pass
 
 app = FastAPI(title="JARVIS Local Agent")
 
