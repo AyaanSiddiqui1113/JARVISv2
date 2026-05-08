@@ -195,20 +195,72 @@ def _xpath_literal(value: str) -> str:
     return "concat(" + ", '\"', ".join(f'"{part}"' for part in value.split('"')) + ")"
 
 
-def _find_element(driver, selector: str | None = None, text: str | None = None, clickable: bool = False):
+def _find_element(driver, selector: str | None = None, text: str | None = None, clickable: bool = False, nth: int = 0):
     _webdriver, By, _Keys, _ActionChains, WebDriverWait, EC = _import_selenium()
     wait = WebDriverWait(driver, 8)
     if selector:
-        locator = (By.CSS_SELECTOR, selector)
+        elements = wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, selector) or False)
     else:
         needle = _xpath_literal(text or "")
-        locator = (
-            By.XPATH,
-            "//*[self::a or self::button or self::input or self::textarea or self::select or @role='button']"
-            f"[contains(normalize-space(.), {needle}) or contains(@value, {needle}) "
-            f"or contains(@placeholder, {needle}) or contains(@aria-label, {needle})]",
+        # Broaden: any element (links, headings, divs that wrap result titles, etc.)
+        xpath = (
+            f"//*[(self::a or self::button or self::input or self::textarea or self::select "
+            f"or self::h1 or self::h2 or self::h3 or self::span or self::div or @role='button' or @role='link') "
+            f"and (contains(normalize-space(.), {needle}) or contains(@value, {needle}) "
+            f"or contains(@placeholder, {needle}) or contains(@aria-label, {needle}) or contains(@title, {needle}))]"
         )
-    return wait.until(EC.element_to_be_clickable(locator) if clickable else EC.presence_of_element_located(locator))
+        elements = wait.until(lambda d: d.find_elements(By.XPATH, xpath) or False)
+
+    # Filter to visible elements
+    visible = []
+    for el in elements:
+        try:
+            rect = el.rect
+            if rect.get("width", 0) >= 2 and rect.get("height", 0) >= 2 and el.is_displayed():
+                visible.append(el)
+        except Exception:
+            continue
+    if not visible:
+        visible = elements
+
+    # When matching by text, prefer the most specific (smallest) matching element,
+    # and when many siblings match, pick the nth distinct clickable ancestor link.
+    if text and not selector:
+        # Sort by depth (deepest first) so we prefer the inner result title over wrapping containers
+        def depth(el):
+            try:
+                return driver.execute_script(
+                    "let n=arguments[0],d=0;while(n.parentElement){d++;n=n.parentElement;}return d;", el
+                )
+            except Exception:
+                return 0
+        visible.sort(key=depth, reverse=True)
+        # Walk up to nearest <a> or [role=link]/[role=button] for actual click target
+        clickable_targets = []
+        seen = set()
+        for el in visible:
+            try:
+                target = driver.execute_script(
+                    "let n=arguments[0];while(n && n!==document.body){if(n.tagName==='A'||n.tagName==='BUTTON'||n.getAttribute('role')==='button'||n.getAttribute('role')==='link')return n;n=n.parentElement;}return arguments[0];",
+                    el,
+                )
+                key = driver.execute_script("const r=arguments[0].getBoundingClientRect();return r.top+'_'+r.left+'_'+r.width+'_'+r.height;", target)
+                if key in seen:
+                    continue
+                seen.add(key)
+                clickable_targets.append(target)
+            except Exception:
+                continue
+        if clickable_targets:
+            visible = clickable_targets
+
+    idx = max(0, min(nth, len(visible) - 1))
+    chosen = visible[idx]
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", chosen)
+    except Exception:
+        pass
+    return chosen
 
 
 def _element_center(driver, element):
