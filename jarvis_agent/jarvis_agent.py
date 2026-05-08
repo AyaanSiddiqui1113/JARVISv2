@@ -490,12 +490,16 @@ def browser_goto(arg: BrowserGoto):
 def browser_click(arg: BrowserClick):
     driver = _ensure_browser(headless=False)
     try:
-        element = _find_element(driver, arg.selector, arg.text, clickable=True)
+        element = _find_element(driver, arg.selector, arg.text, clickable=True, nth=arg.nth)
         center = _element_center(driver, element)
         _move_cursor(driver, center["x"], center["y"])
         _flash_cursor(driver)
-        element.click()
-        return {"ok": True, "clicked": arg.selector or arg.text}
+        try:
+            element.click()
+        except Exception:
+            # Fallback: JS click bypasses overlay/intercept issues common on SERPs
+            driver.execute_script("arguments[0].click();", element)
+        return {"ok": True, "clicked": arg.selector or arg.text, "nth": arg.nth}
     except Exception as e:
         raise HTTPException(500, f"Click failed: {e}")
 
