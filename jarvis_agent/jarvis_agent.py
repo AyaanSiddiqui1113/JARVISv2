@@ -405,6 +405,7 @@ class BrowserGoto(BaseModel):
 class BrowserClick(BaseModel):
     selector: str | None = None
     text: str | None = None
+    nth: int = 0  # which match to use when multiple match (0-based)
 
 class BrowserType(BaseModel):
     selector: str
