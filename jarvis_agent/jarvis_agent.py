@@ -195,20 +195,72 @@ def _xpath_literal(value: str) -> str:
     return "concat(" + ", '\"', ".join(f'"{part}"' for part in value.split('"')) + ")"
 
 
-def _find_element(driver, selector: str | None = None, text: str | None = None, clickable: bool = False):
+def _find_element(driver, selector: str | None = None, text: str | None = None, clickable: bool = False, nth: int = 0):
     _webdriver, By, _Keys, _ActionChains, WebDriverWait, EC = _import_selenium()
     wait = WebDriverWait(driver, 8)
     if selector:
-        locator = (By.CSS_SELECTOR, selector)
+        elements = wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, selector) or False)
     else:
         needle = _xpath_literal(text or "")
-        locator = (
-            By.XPATH,
-            "//*[self::a or self::button or self::input or self::textarea or self::select or @role='button']"
-            f"[contains(normalize-space(.), {needle}) or contains(@value, {needle}) "
-            f"or contains(@placeholder, {needle}) or contains(@aria-label, {needle})]",
+        # Broaden: any element (links, headings, divs that wrap result titles, etc.)
+        xpath = (
+            f"//*[(self::a or self::button or self::input or self::textarea or self::select "
+            f"or self::h1 or self::h2 or self::h3 or self::span or self::div or @role='button' or @role='link') "
+            f"and (contains(normalize-space(.), {needle}) or contains(@value, {needle}) "
+            f"or contains(@placeholder, {needle}) or contains(@aria-label, {needle}) or contains(@title, {needle}))]"
         )
-    return wait.until(EC.element_to_be_clickable(locator) if clickable else EC.presence_of_element_located(locator))
+        elements = wait.until(lambda d: d.find_elements(By.XPATH, xpath) or False)
+
+    # Filter to visible elements
+    visible = []
+    for el in elements:
+        try:
+            rect = el.rect
+            if rect.get("width", 0) >= 2 and rect.get("height", 0) >= 2 and el.is_displayed():
+                visible.append(el)
+        except Exception:
+            continue
+    if not visible:
+        visible = elements
+
+    # When matching by text, prefer the most specific (smallest) matching element,
+    # and when many siblings match, pick the nth distinct clickable ancestor link.
+    if text and not selector:
+        # Sort by depth (deepest first) so we prefer the inner result title over wrapping containers
+        def depth(el):
+            try:
+                return driver.execute_script(
+                    "let n=arguments[0],d=0;while(n.parentElement){d++;n=n.parentElement;}return d;", el
+                )
+            except Exception:
+                return 0
+        visible.sort(key=depth, reverse=True)
+        # Walk up to nearest <a> or [role=link]/[role=button] for actual click target
+        clickable_targets = []
+        seen = set()
+        for el in visible:
+            try:
+                target = driver.execute_script(
+                    "let n=arguments[0];while(n && n!==document.body){if(n.tagName==='A'||n.tagName==='BUTTON'||n.getAttribute('role')==='button'||n.getAttribute('role')==='link')return n;n=n.parentElement;}return arguments[0];",
+                    el,
+                )
+                key = driver.execute_script("const r=arguments[0].getBoundingClientRect();return r.top+'_'+r.left+'_'+r.width+'_'+r.height;", target)
+                if key in seen:
+                    continue
+                seen.add(key)
+                clickable_targets.append(target)
+            except Exception:
+                continue
+        if clickable_targets:
+            visible = clickable_targets
+
+    idx = max(0, min(nth, len(visible) - 1))
+    chosen = visible[idx]
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", chosen)
+    except Exception:
+        pass
+    return chosen
 
 
 def _element_center(driver, element):
@@ -405,6 +457,7 @@ class BrowserGoto(BaseModel):
 class BrowserClick(BaseModel):
     selector: str | None = None
     text: str | None = None
+    nth: int = 0  # which match to use when multiple match (0-based)
 
 class BrowserType(BaseModel):
     selector: str
@@ -437,12 +490,16 @@ def browser_goto(arg: BrowserGoto):
 def browser_click(arg: BrowserClick):
     driver = _ensure_browser(headless=False)
     try:
-        element = _find_element(driver, arg.selector, arg.text, clickable=True)
+        element = _find_element(driver, arg.selector, arg.text, clickable=True, nth=arg.nth)
         center = _element_center(driver, element)
         _move_cursor(driver, center["x"], center["y"])
         _flash_cursor(driver)
-        element.click()
-        return {"ok": True, "clicked": arg.selector or arg.text}
+        try:
+            element.click()
+        except Exception:
+            # Fallback: JS click bypasses overlay/intercept issues common on SERPs
+            driver.execute_script("arguments[0].click();", element)
+        return {"ok": True, "clicked": arg.selector or arg.text, "nth": arg.nth}
     except Exception as e:
         raise HTTPException(500, f"Click failed: {e}")
 
@@ -490,21 +547,86 @@ def browser_read():
         return driver.execute_script(r"""
   const text = (document.body.innerText || '').slice(0, 4000);
   const els = [];
-  document.querySelectorAll('a,button,input,textarea,select,[role=button]').forEach(el => {
+  const seenKeys = new Set();
+  const isVisible = (el, r) => {
+    if (r.width < 4 || r.height < 4) return false;
+    if (r.bottom < 0 || r.top > innerHeight + 400) return false;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) < 0.05) return false;
+    return true;
+  };
+  const cssPath = (el) => {
+    if (el.id) return '#' + CSS.escape(el.id);
+    const parts = [];
+    let n = el;
+    while (n && n.nodeType === 1 && parts.length < 5) {
+      let part = n.tagName.toLowerCase();
+      if (n.classList && n.classList.length) {
+        const cls = Array.from(n.classList).slice(0,2).map(c => '.' + CSS.escape(c)).join('');
+        part += cls;
+      }
+      const parent = n.parentElement;
+      if (parent) {
+        const sibs = Array.from(parent.children).filter(c => c.tagName === n.tagName);
+        if (sibs.length > 1) part += `:nth-of-type(${sibs.indexOf(n)+1})`;
+      }
+      parts.unshift(part);
+      n = n.parentElement;
+      if (n && n.id) { parts.unshift('#' + CSS.escape(n.id)); break; }
+    }
+    return parts.join(' > ');
+  };
+
+  // 1) Search-result links (Google/Bing/DuckDuckGo etc.) — enumerated for easy nth targeting
+  const results = [];
+  const resultSelectors = [
+    'div#search a h3',           // Google
+    'div.g a h3',                // Google
+    'li.b_algo h2 a',            // Bing
+    'h2 a[href]',                // generic
+    'article a[href]',           // generic
+    '#links .result__a',         // DuckDuckGo
+    '[data-testid="result-title-a"]', // DDG new
+  ];
+  const resultLinks = new Set();
+  for (const sel of resultSelectors) {
+    document.querySelectorAll(sel).forEach(el => {
+      const a = el.tagName === 'A' ? el : el.closest('a');
+      if (!a || !a.href) return;
+      if (a.href.startsWith('javascript:') || a.href.includes('#')) {/* still allow */}
+      if (resultLinks.has(a.href)) return;
+      const r = a.getBoundingClientRect();
+      if (!isVisible(a, r)) return;
+      resultLinks.add(a.href);
+      results.push({
+        index: results.length,
+        title: (el.innerText || a.innerText || '').trim().slice(0, 140),
+        href: a.href,
+        selector: cssPath(a),
+      });
+    });
+    if (results.length >= 15) break;
+  }
+
+  // 2) Generic interactive controls
+  document.querySelectorAll('a,button,input,textarea,select,[role=button],[role=link]').forEach(el => {
     const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) return;
-    if (r.bottom < 0 || r.top > innerHeight + 200) return;
+    if (!isVisible(el, r)) return;
+    const key = Math.round(r.top)+'_'+Math.round(r.left)+'_'+el.tagName;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
     els.push({
       tag: el.tagName.toLowerCase(),
-      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,80),
+      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,100),
+      href: el.tagName === 'A' ? el.href : null,
       id: el.id || null,
       name: el.getAttribute('name') || null,
       type: el.getAttribute('type') || null,
-      selector: el.id ? '#' + CSS.escape(el.id) :
-                el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]` : null,
+      selector: cssPath(el),
     });
   });
-  return { url: location.href, title: document.title, text, controls: els.slice(0, 60) };
+
+  return { url: location.href, title: document.title, text, results, controls: els.slice(0, 80) };
 """)
     except Exception as e:
         raise HTTPException(500, f"Read failed: {e}")

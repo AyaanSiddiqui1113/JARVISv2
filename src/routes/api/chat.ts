@@ -12,14 +12,14 @@ You have access to tools that let you control the user's computer through a loca
 You can drive a real Chrome window alongside the user through the local Selenium agent. They see your moves via a glowing red "JARVIS" cursor overlaid on the page. They use the same window with their normal cursor — you cowork.
 - browser_open(): Launch the cowork window (does this once on first use).
 - browser_goto(url): Navigate.
-- browser_read(): Get the page's text + a list of clickable controls with selectors. ALWAYS call this before clicking/typing on a fresh page so you know what's there.
-- browser_click(selector?, text?): Click an element. Prefer 'selector' (from browser_read). Fall back to 'text' for visible-text matching.
+- browser_read(): Returns { url, title, text, results, controls }. 'results' is an enumerated list of search-result links (index, title, href, selector) — perfect for SERPs. 'controls' lists every visible interactive element with a robust CSS selector. ALWAYS call this before clicking/typing on a fresh page.
+- browser_click(selector?, text?, nth?): Click an element. STRONGLY prefer the 'selector' field returned by browser_read. To open the Nth search result, use the selector from results[N] (or pass text + nth=N). 'nth' is 0-based and selects among multiple matches.
 - browser_type(selector, text, submit?): Focus & type into an input. Set submit=true to press Enter after.
 - browser_press(key): Press a single key (Enter, Tab, Escape, etc.).
 - browser_scroll(dy): Scroll by pixels (positive = down).
 - browser_close(): Close the cowork window.
 
-Workflow for browser tasks: open → goto → read → click/type → read again → repeat. Be patient, narrate briefly what you're doing.
+Workflow for browser tasks: open → goto → read → click/type → read again → repeat. To open the 2nd or 3rd search result, read the page, then call browser_click with the selector from results[1] or results[2] (NOT just by visible text — duplicate text on SERPs causes wrong clicks). Be patient, narrate briefly what you're doing.
 
 Style: concise, markdown code blocks for commands, confirm destructive actions.`;
 
@@ -142,7 +142,7 @@ export const Route = createFileRoute("/api/chat")({
             { type: "function", function: { name: "browser_open", description: "Launch the cowork Chrome window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
             { type: "function", function: { name: "browser_goto", description: "Navigate the cowork browser to a URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
             { type: "function", function: { name: "browser_read", description: "Read the current page: text + clickable controls with selectors. Call before clicking/typing.", parameters: { type: "object", properties: {} } } },
-            { type: "function", function: { name: "browser_click", description: "Click an element. Prefer 'selector' from browser_read; use 'text' for visible-text matching.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" } } } } },
+            { type: "function", function: { name: "browser_click", description: "Click an element. Prefer 'selector' from browser_read.results[n].selector or controls[n].selector. Use 'text' + 'nth' (0-based) to pick the Nth match by visible text. For the 2nd/3rd search result, use results[1]/results[2] selector.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" }, nth: { type: "number", description: "0-based index when multiple elements match (default 0)" } } } } },
             { type: "function", function: { name: "browser_type", description: "Type into an input. submit=true presses Enter after.", parameters: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" }, submit: { type: "boolean" } }, required: ["selector", "text"] } } },
             { type: "function", function: { name: "browser_press", description: "Press a single key (Enter, Tab, Escape, ArrowDown, etc.).", parameters: { type: "object", properties: { key: { type: "string" } }, required: ["key"] } } },
             { type: "function", function: { name: "browser_scroll", description: "Scroll the page by dy pixels (positive = down).", parameters: { type: "object", properties: { dy: { type: "number" } } } } },
