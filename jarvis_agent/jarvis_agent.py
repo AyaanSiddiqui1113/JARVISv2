@@ -547,21 +547,86 @@ def browser_read():
         return driver.execute_script(r"""
   const text = (document.body.innerText || '').slice(0, 4000);
   const els = [];
-  document.querySelectorAll('a,button,input,textarea,select,[role=button]').forEach(el => {
+  const seenKeys = new Set();
+  const isVisible = (el, r) => {
+    if (r.width < 4 || r.height < 4) return false;
+    if (r.bottom < 0 || r.top > innerHeight + 400) return false;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) < 0.05) return false;
+    return true;
+  };
+  const cssPath = (el) => {
+    if (el.id) return '#' + CSS.escape(el.id);
+    const parts = [];
+    let n = el;
+    while (n && n.nodeType === 1 && parts.length < 5) {
+      let part = n.tagName.toLowerCase();
+      if (n.classList && n.classList.length) {
+        const cls = Array.from(n.classList).slice(0,2).map(c => '.' + CSS.escape(c)).join('');
+        part += cls;
+      }
+      const parent = n.parentElement;
+      if (parent) {
+        const sibs = Array.from(parent.children).filter(c => c.tagName === n.tagName);
+        if (sibs.length > 1) part += `:nth-of-type(${sibs.indexOf(n)+1})`;
+      }
+      parts.unshift(part);
+      n = n.parentElement;
+      if (n && n.id) { parts.unshift('#' + CSS.escape(n.id)); break; }
+    }
+    return parts.join(' > ');
+  };
+
+  // 1) Search-result links (Google/Bing/DuckDuckGo etc.) — enumerated for easy nth targeting
+  const results = [];
+  const resultSelectors = [
+    'div#search a h3',           // Google
+    'div.g a h3',                // Google
+    'li.b_algo h2 a',            // Bing
+    'h2 a[href]',                // generic
+    'article a[href]',           // generic
+    '#links .result__a',         // DuckDuckGo
+    '[data-testid="result-title-a"]', // DDG new
+  ];
+  const resultLinks = new Set();
+  for (const sel of resultSelectors) {
+    document.querySelectorAll(sel).forEach(el => {
+      const a = el.tagName === 'A' ? el : el.closest('a');
+      if (!a || !a.href) return;
+      if (a.href.startsWith('javascript:') || a.href.includes('#')) {/* still allow */}
+      if (resultLinks.has(a.href)) return;
+      const r = a.getBoundingClientRect();
+      if (!isVisible(a, r)) return;
+      resultLinks.add(a.href);
+      results.push({
+        index: results.length,
+        title: (el.innerText || a.innerText || '').trim().slice(0, 140),
+        href: a.href,
+        selector: cssPath(a),
+      });
+    });
+    if (results.length >= 15) break;
+  }
+
+  // 2) Generic interactive controls
+  document.querySelectorAll('a,button,input,textarea,select,[role=button],[role=link]').forEach(el => {
     const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) return;
-    if (r.bottom < 0 || r.top > innerHeight + 200) return;
+    if (!isVisible(el, r)) return;
+    const key = Math.round(r.top)+'_'+Math.round(r.left)+'_'+el.tagName;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
     els.push({
       tag: el.tagName.toLowerCase(),
-      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,80),
+      text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0,100),
+      href: el.tagName === 'A' ? el.href : null,
       id: el.id || null,
       name: el.getAttribute('name') || null,
       type: el.getAttribute('type') || null,
-      selector: el.id ? '#' + CSS.escape(el.id) :
-                el.getAttribute('name') ? `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]` : null,
+      selector: cssPath(el),
     });
   });
-  return { url: location.href, title: document.title, text, controls: els.slice(0, 60) };
+
+  return { url: location.href, title: document.title, text, results, controls: els.slice(0, 80) };
 """)
     except Exception as e:
         raise HTTPException(500, f"Read failed: {e}")
