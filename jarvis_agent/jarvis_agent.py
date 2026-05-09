@@ -95,6 +95,83 @@ def _import_selenium():
             ) from second_error
 
 
+def _import_pyautogui():
+    """Import PyAutoGUI, installing it into this interpreter if needed."""
+    try:
+        import pyautogui  # type: ignore
+        return pyautogui
+    except ImportError as first_error:
+        install = _run_current_python_module("pip", "install", "pyautogui", "pillow")
+        if install.returncode != 0:
+            raise HTTPException(
+                500,
+                "PyAutoGUI is not installed for the Python interpreter running this agent. "
+                f"Agent Python: {sys.executable}\n"
+                f"Install failed:\n{install.stdout}\n{install.stderr}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install pyautogui pillow',
+            ) from first_error
+        try:
+            import pyautogui  # type: ignore
+            return pyautogui
+        except ImportError as second_error:
+            raise HTTPException(
+                500,
+                "PyAutoGUI still cannot be imported by the agent after install. "
+                f"Agent Python: {sys.executable}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install pyautogui pillow',
+            ) from second_error
+
+
+def _import_pyperclip():
+    """Import pyperclip, installing it into this interpreter if needed."""
+    try:
+        import pyperclip  # type: ignore
+        return pyperclip
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pyperclip")
+        if install.returncode != 0:
+            return None
+        try:
+            import pyperclip  # type: ignore
+            return pyperclip
+        except ImportError:
+            return None
+
+
+def _import_cv2():
+    """Optional OCR helper import; returns None if unavailable."""
+    try:
+        import cv2  # type: ignore
+        return cv2
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "opencv-python")
+        if install.returncode != 0:
+            return None
+        try:
+            import cv2  # type: ignore
+            return cv2
+        except ImportError:
+            return None
+
+
+def _import_pytesseract():
+    """Optional OCR import; requires the Tesseract desktop app to be installed too."""
+    try:
+        import pytesseract  # type: ignore
+        return pytesseract
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pytesseract")
+        if install.returncode != 0:
+            return None
+        try:
+            import pytesseract  # type: ignore
+            return pytesseract
+        except ImportError:
+            return None
+
+
 CURSOR_OVERLAY_JS = r"""
 (() => {
   if (window.__jarvisCursor) return;
