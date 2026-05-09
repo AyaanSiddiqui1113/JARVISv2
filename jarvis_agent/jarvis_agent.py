@@ -644,6 +644,32 @@ def system_info():
     return info
 
 
+class DesktopClick(BaseModel):
+    x: int | None = None
+    y: int | None = None
+    text: str | None = None
+    nth: int = 0
+    button: str = "left"
+    clicks: int = 1
+
+
+class DesktopType(BaseModel):
+    text: str
+    submit: bool = False
+
+
+class DesktopHotkey(BaseModel):
+    keys: list[str]
+
+
+class DesktopKey(BaseModel):
+    key: str
+
+
+class DesktopScroll(BaseModel):
+    amount: int = -5
+
+
 # ===================== DESKTOP COWORK =====================
 @app.post("/tool/desktop_read")
 def desktop_read():
