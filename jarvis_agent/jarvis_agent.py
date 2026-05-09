@@ -644,6 +644,98 @@ def system_info():
     return info
 
 
+# ===================== DESKTOP COWORK =====================
+@app.post("/tool/desktop_read")
+def desktop_read():
+    pyautogui = _import_pyautogui()
+    try:
+        size = pyautogui.size()
+        pos = pyautogui.position()
+        screenshot = pyautogui.screenshot()
+        controls, controls_note = _read_desktop_controls()
+        ocr, ocr_note = _read_desktop_ocr(screenshot)
+        _desktop_state["controls"] = controls + ocr
+        return {
+            "ok": True,
+            "screen": {"width": size.width, "height": size.height},
+            "mouse": {"x": pos.x, "y": pos.y},
+            "active_window": _active_window_info(),
+            "controls": controls,
+            "ocr": ocr,
+            "notes": [n for n in [controls_note, ocr_note] if n],
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Desktop read failed: {e}")
+
+
+@app.post("/tool/desktop_click")
+def desktop_click(arg: DesktopClick):
+    pyautogui = _import_pyautogui()
+    try:
+        if arg.text:
+            target = _match_desktop_target(arg.text, arg.nth)
+            x, y = int(target["x"]), int(target["y"])
+        elif arg.x is not None and arg.y is not None:
+            x, y = int(arg.x), int(arg.y)
+        else:
+            raise HTTPException(400, "desktop_click requires either x/y coordinates or text")
+        pyautogui.moveTo(x, y, duration=0.15)
+        pyautogui.click(x=x, y=y, clicks=max(1, int(arg.clicks)), button=arg.button)
+        return {"ok": True, "clicked": {"x": x, "y": y, "text": arg.text, "nth": arg.nth}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Desktop click failed: {e}")
+
+
+@app.post("/tool/desktop_type")
+def desktop_type(arg: DesktopType):
+    pyautogui = _import_pyautogui()
+    try:
+        pyperclip = _import_pyperclip()
+        if pyperclip:
+            pyperclip.copy(arg.text)
+            pyautogui.hotkey("command" if IS_MAC else "ctrl", "v")
+        else:
+            pyautogui.write(arg.text, interval=0.01)
+        if arg.submit:
+            pyautogui.press("enter")
+        return {"ok": True, "typed": arg.text, "submit": arg.submit}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop type failed: {e}")
+
+
+@app.post("/tool/desktop_hotkey")
+def desktop_hotkey(arg: DesktopHotkey):
+    pyautogui = _import_pyautogui()
+    try:
+        keys = [k.lower().replace("control", "ctrl").replace("cmd", "command") for k in arg.keys]
+        pyautogui.hotkey(*keys)
+        return {"ok": True, "keys": keys}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop hotkey failed: {e}")
+
+
+@app.post("/tool/desktop_press")
+def desktop_press(arg: DesktopKey):
+    pyautogui = _import_pyautogui()
+    try:
+        pyautogui.press(arg.key.lower())
+        return {"ok": True, "pressed": arg.key}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop key press failed: {e}")
+
+
+@app.post("/tool/desktop_scroll")
+def desktop_scroll(arg: DesktopScroll):
+    pyautogui = _import_pyautogui()
+    try:
+        pyautogui.scroll(int(arg.amount))
+        return {"ok": True, "amount": arg.amount}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop scroll failed: {e}")
+
+
 # ===================== BROWSER COWORK =====================
 class BrowserGoto(BaseModel):
     url: str
