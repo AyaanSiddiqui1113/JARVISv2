@@ -172,6 +172,24 @@ def _import_pytesseract():
             return None
 
 
+def _import_pywinauto():
+    """Optional Windows UI Automation import for reading/clicking desktop app controls."""
+    if not IS_WIN:
+        return None
+    try:
+        from pywinauto import Desktop  # type: ignore
+        return Desktop
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pywinauto")
+        if install.returncode != 0:
+            return None
+        try:
+            from pywinauto import Desktop  # type: ignore
+            return Desktop
+        except ImportError:
+            return None
+
+
 CURSOR_OVERLAY_JS = r"""
 (() => {
   if (window.__jarvisCursor) return;
