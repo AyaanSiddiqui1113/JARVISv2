@@ -368,6 +368,101 @@ def _element_center(driver, element):
         element,
     )
 
+
+def _active_window_info():
+    pyautogui = _import_pyautogui()
+    info = {"title": None, "left": None, "top": None, "width": None, "height": None}
+    try:
+        win = pyautogui.getActiveWindow()
+        if win:
+            info.update({
+                "title": getattr(win, "title", None),
+                "left": getattr(win, "left", None),
+                "top": getattr(win, "top", None),
+                "width": getattr(win, "width", None),
+                "height": getattr(win, "height", None),
+            })
+    except Exception:
+        pass
+    return info
+
+
+def _read_desktop_controls(max_controls: int = 120):
+    Desktop = _import_pywinauto()
+    if Desktop is None:
+        return [], "Windows UI Automation unavailable; using mouse/keyboard coordinates only."
+
+    try:
+        desktop = Desktop(backend="uia")
+        active = desktop.get_active()
+        controls = []
+        for idx, ctrl in enumerate(active.descendants()[: max_controls * 3]):
+            try:
+                rect = ctrl.rectangle()
+                name = (ctrl.window_text() or "").strip()
+                control_type = getattr(ctrl.element_info, "control_type", "") or ""
+                if not name and control_type not in {"Edit", "Button", "ComboBox", "Hyperlink", "ListItem", "MenuItem", "TabItem"}:
+                    continue
+                if rect.width() < 4 or rect.height() < 4:
+                    continue
+                controls.append({
+                    "index": len(controls),
+                    "text": name[:160],
+                    "type": control_type,
+                    "class": getattr(ctrl.element_info, "class_name", None),
+                    "x": int((rect.left + rect.right) / 2),
+                    "y": int((rect.top + rect.bottom) / 2),
+                    "bounds": [int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)],
+                })
+                if len(controls) >= max_controls:
+                    break
+            except Exception:
+                continue
+        return controls, None
+    except Exception as e:
+        return [], f"Windows UI Automation read failed: {e}"
+
+
+def _read_desktop_ocr(screenshot, max_items: int = 80):
+    pytesseract = _import_pytesseract()
+    if pytesseract is None:
+        return [], "OCR unavailable. For screen text recognition install Tesseract OCR, or rely on UI Automation controls."
+
+    try:
+        data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
+        items = []
+        words = len(data.get("text", []))
+        for i in range(words):
+            text = (data["text"][i] or "").strip()
+            if not text:
+                continue
+            try:
+                conf = float(data.get("conf", [0])[i])
+            except Exception:
+                conf = 0
+            if conf < 45:
+                continue
+            x, y, w, h = int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])
+            items.append({"index": len(items), "text": text[:80], "confidence": round(conf, 1), "x": x + w // 2, "y": y + h // 2, "bounds": [x, y, x + w, y + h]})
+            if len(items) >= max_items:
+                break
+        return items, None
+    except Exception as e:
+        return [], f"OCR failed: {e}. If needed, install the Tesseract OCR desktop app and restart the agent."
+
+
+def _match_desktop_target(text: str, nth: int = 0):
+    needle = text.lower().strip()
+    controls = _desktop_state.get("controls") or []
+    matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    if not matches:
+        controls, _note = _read_desktop_controls()
+        _desktop_state["controls"] = controls
+        matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    if not matches:
+        raise HTTPException(404, f"No visible desktop control found matching: {text}")
+    return matches[max(0, min(nth, len(matches) - 1))]
+
 app = FastAPI(title="JARVIS Local Agent")
 
 # CORS — allow the web UI to call us from any origin (you control the browser).
