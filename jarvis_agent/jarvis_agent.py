@@ -26,6 +26,7 @@ import shutil
 import platform
 import subprocess
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
@@ -39,6 +40,9 @@ from pydantic import BaseModel
 _browser_lock = threading.Lock()
 _browser_state = {
     "driver": None,
+}
+_desktop_state = {
+    "controls": [],
 }
 
 
