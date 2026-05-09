@@ -960,6 +960,7 @@ if __name__ == "__main__":
     print("  J.A.R.V.I.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
     print("  Browser cowork: ask JARVIS to 'open a browser and...'")
+    print("  Desktop cowork: ask JARVIS to inspect/click/type in desktop apps.")
     print("  Keep this window open while using the JARVIS web UI.")
     print("=" * 60)
     uvicorn.run(app, host="127.0.0.1", port=7337, log_level="info")
