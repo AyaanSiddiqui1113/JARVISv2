@@ -8,6 +8,17 @@ You have access to tools that let you control the user's computer through a loca
 - run_command(command, cwd?): Shell command. Use for installs, launching apps, scripts.
 - open_path(path), open_url(url), list_dir(path), search_files(root, query), read_file(path), write_file(path, content), system_info().
 
+## DESKTOP COWORK MODE 🖥️
+You can also operate normal desktop apps (launchers, installers, settings windows, games) through the local agent using mouse/keyboard control and screen/UI inspection. Do NOT claim you cannot interact with desktop apps; use these tools instead.
+- desktop_read(): Inspect the active desktop window. Returns screen size, mouse position, active window, visible UI Automation controls, and OCR text when available. ALWAYS call this before desktop clicks.
+- desktop_click(x?, y?, text?, nth?, button?, clicks?): Click by coordinates or by visible control text returned from desktop_read. Prefer text when it appears in controls; use x/y for OCR or visual targets.
+- desktop_type(text, submit?): Type/paste text into the focused desktop field. Set submit=true to press Enter.
+- desktop_hotkey(keys): Press combinations like ["ctrl","l"], ["alt","f4"], ["win","r"].
+- desktop_press(key): Press one key such as Enter, Tab, Escape, Space.
+- desktop_scroll(amount): Scroll the active window; negative usually scrolls down.
+
+Desktop workflow: open_path/run_command to launch the app → desktop_read → desktop_click/desktop_type/desktop_press → desktop_read again. If OCR is unavailable, use UI Automation controls or ask the user what is visible only after trying desktop_read.
+
 ## BROWSER COWORK MODE 🖱️
 You can drive a real Chrome window alongside the user through the local Selenium agent. They see your moves via a glowing red "JARVIS" cursor overlaid on the page. They use the same window with their normal cursor — you cowork.
 - browser_open(): Launch the cowork window (does this once on first use).
@@ -139,6 +150,12 @@ export const Route = createFileRoute("/api/chat")({
                 parameters: { type: "object", properties: {} },
               },
             },
+            { type: "function", function: { name: "desktop_read", description: "Inspect the active desktop window/screen. Returns screen size, mouse position, active window, UI controls, and OCR text when available. Always call before desktop clicks.", parameters: { type: "object", properties: {} } } },
+            { type: "function", function: { name: "desktop_click", description: "Click in a desktop app by coordinates or by visible text from desktop_read. Prefer text for real controls; use x/y for visual/OCR targets.", parameters: { type: "object", properties: { x: { type: "number" }, y: { type: "number" }, text: { type: "string" }, nth: { type: "number", description: "0-based match index when multiple controls/text items match" }, button: { type: "string", description: "left, right, or middle" }, clicks: { type: "number" } } } } },
+            { type: "function", function: { name: "desktop_type", description: "Type or paste text into the focused desktop control. submit=true presses Enter after typing.", parameters: { type: "object", properties: { text: { type: "string" }, submit: { type: "boolean" } }, required: ["text"] } } },
+            { type: "function", function: { name: "desktop_hotkey", description: "Press a desktop keyboard shortcut, e.g. ['ctrl','l'], ['alt','f4'], ['win','r'].", parameters: { type: "object", properties: { keys: { type: "array", items: { type: "string" } } }, required: ["keys"] } } },
+            { type: "function", function: { name: "desktop_press", description: "Press one desktop key such as Enter, Tab, Escape, Space, ArrowDown.", parameters: { type: "object", properties: { key: { type: "string" } }, required: ["key"] } } },
+            { type: "function", function: { name: "desktop_scroll", description: "Scroll the active desktop window; negative usually scrolls down, positive scrolls up.", parameters: { type: "object", properties: { amount: { type: "number" } } } } },
             { type: "function", function: { name: "browser_open", description: "Launch the cowork Chrome window with JARVIS's red cursor overlay.", parameters: { type: "object", properties: {} } } },
             { type: "function", function: { name: "browser_goto", description: "Navigate the cowork browser to a URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
             { type: "function", function: { name: "browser_read", description: "Read the current page: text + clickable controls with selectors. Call before clicking/typing.", parameters: { type: "object", properties: {} } } },

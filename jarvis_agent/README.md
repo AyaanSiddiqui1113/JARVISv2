@@ -8,7 +8,7 @@ disk, install software, etc.
 ## Setup
 
 ```bash
-python -m pip install fastapi uvicorn psutil selenium
+python -m pip install fastapi uvicorn psutil selenium pyautogui pillow pyperclip pywinauto pytesseract
 python jarvis_agent.py
 ```
 
@@ -28,6 +28,9 @@ status indicator should turn cyan within ~5 seconds.
 | `write_file` | Writes/overwrites a text file |
 | `system_info` | Returns OS/CPU/RAM/disk info |
 | `browser_*` | **Cowork mode** — JARVIS drives your installed Chrome with Selenium and a glowing red cursor overlay; you use the same window with your normal cursor |
+| `desktop_*` | **Desktop cowork mode** — JARVIS inspects the active desktop app and uses mouse/keyboard control for launchers, installers, settings windows, etc. |
+
+Desktop OCR is optional. If you want JARVIS to read text from screenshots when normal Windows UI controls are not exposed, install the Tesseract OCR desktop app and restart the agent.
 
 ## ⚠️ Security
 

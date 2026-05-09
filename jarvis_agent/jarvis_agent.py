@@ -26,6 +26,7 @@ import shutil
 import platform
 import subprocess
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
@@ -39,6 +40,9 @@ from pydantic import BaseModel
 _browser_lock = threading.Lock()
 _browser_state = {
     "driver": None,
+}
+_desktop_state = {
+    "controls": [],
 }
 
 
@@ -89,6 +93,101 @@ def _import_selenium():
                 "Fix manually with:\n"
                 f'"{sys.executable}" -m pip install selenium',
             ) from second_error
+
+
+def _import_pyautogui():
+    """Import PyAutoGUI, installing it into this interpreter if needed."""
+    try:
+        import pyautogui  # type: ignore
+        return pyautogui
+    except ImportError as first_error:
+        install = _run_current_python_module("pip", "install", "pyautogui", "pillow")
+        if install.returncode != 0:
+            raise HTTPException(
+                500,
+                "PyAutoGUI is not installed for the Python interpreter running this agent. "
+                f"Agent Python: {sys.executable}\n"
+                f"Install failed:\n{install.stdout}\n{install.stderr}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install pyautogui pillow',
+            ) from first_error
+        try:
+            import pyautogui  # type: ignore
+            return pyautogui
+        except ImportError as second_error:
+            raise HTTPException(
+                500,
+                "PyAutoGUI still cannot be imported by the agent after install. "
+                f"Agent Python: {sys.executable}\n"
+                "Fix manually with:\n"
+                f'"{sys.executable}" -m pip install pyautogui pillow',
+            ) from second_error
+
+
+def _import_pyperclip():
+    """Import pyperclip, installing it into this interpreter if needed."""
+    try:
+        import pyperclip  # type: ignore
+        return pyperclip
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pyperclip")
+        if install.returncode != 0:
+            return None
+        try:
+            import pyperclip  # type: ignore
+            return pyperclip
+        except ImportError:
+            return None
+
+
+def _import_cv2():
+    """Optional OCR helper import; returns None if unavailable."""
+    try:
+        import cv2  # type: ignore
+        return cv2
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "opencv-python")
+        if install.returncode != 0:
+            return None
+        try:
+            import cv2  # type: ignore
+            return cv2
+        except ImportError:
+            return None
+
+
+def _import_pytesseract():
+    """Optional OCR import; requires the Tesseract desktop app to be installed too."""
+    try:
+        import pytesseract  # type: ignore
+        return pytesseract
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pytesseract")
+        if install.returncode != 0:
+            return None
+        try:
+            import pytesseract  # type: ignore
+            return pytesseract
+        except ImportError:
+            return None
+
+
+def _import_pywinauto():
+    """Optional Windows UI Automation import for reading/clicking desktop app controls."""
+    if not IS_WIN:
+        return None
+    try:
+        from pywinauto import Desktop  # type: ignore
+        return Desktop
+    except ImportError:
+        install = _run_current_python_module("pip", "install", "pywinauto")
+        if install.returncode != 0:
+            return None
+        try:
+            from pywinauto import Desktop  # type: ignore
+            return Desktop
+        except ImportError:
+            return None
 
 
 CURSOR_OVERLAY_JS = r"""
@@ -269,6 +368,101 @@ def _element_center(driver, element):
         element,
     )
 
+
+def _active_window_info():
+    pyautogui = _import_pyautogui()
+    info = {"title": None, "left": None, "top": None, "width": None, "height": None}
+    try:
+        win = pyautogui.getActiveWindow()
+        if win:
+            info.update({
+                "title": getattr(win, "title", None),
+                "left": getattr(win, "left", None),
+                "top": getattr(win, "top", None),
+                "width": getattr(win, "width", None),
+                "height": getattr(win, "height", None),
+            })
+    except Exception:
+        pass
+    return info
+
+
+def _read_desktop_controls(max_controls: int = 120):
+    Desktop = _import_pywinauto()
+    if Desktop is None:
+        return [], "Windows UI Automation unavailable; using mouse/keyboard coordinates only."
+
+    try:
+        desktop = Desktop(backend="uia")
+        active = desktop.get_active()
+        controls = []
+        for idx, ctrl in enumerate(active.descendants()[: max_controls * 3]):
+            try:
+                rect = ctrl.rectangle()
+                name = (ctrl.window_text() or "").strip()
+                control_type = getattr(ctrl.element_info, "control_type", "") or ""
+                if not name and control_type not in {"Edit", "Button", "ComboBox", "Hyperlink", "ListItem", "MenuItem", "TabItem"}:
+                    continue
+                if rect.width() < 4 or rect.height() < 4:
+                    continue
+                controls.append({
+                    "index": len(controls),
+                    "text": name[:160],
+                    "type": control_type,
+                    "class": getattr(ctrl.element_info, "class_name", None),
+                    "x": int((rect.left + rect.right) / 2),
+                    "y": int((rect.top + rect.bottom) / 2),
+                    "bounds": [int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)],
+                })
+                if len(controls) >= max_controls:
+                    break
+            except Exception:
+                continue
+        return controls, None
+    except Exception as e:
+        return [], f"Windows UI Automation read failed: {e}"
+
+
+def _read_desktop_ocr(screenshot, max_items: int = 80):
+    pytesseract = _import_pytesseract()
+    if pytesseract is None:
+        return [], "OCR unavailable. For screen text recognition install Tesseract OCR, or rely on UI Automation controls."
+
+    try:
+        data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
+        items = []
+        words = len(data.get("text", []))
+        for i in range(words):
+            text = (data["text"][i] or "").strip()
+            if not text:
+                continue
+            try:
+                conf = float(data.get("conf", [0])[i])
+            except Exception:
+                conf = 0
+            if conf < 45:
+                continue
+            x, y, w, h = int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])
+            items.append({"index": len(items), "text": text[:80], "confidence": round(conf, 1), "x": x + w // 2, "y": y + h // 2, "bounds": [x, y, x + w, y + h]})
+            if len(items) >= max_items:
+                break
+        return items, None
+    except Exception as e:
+        return [], f"OCR failed: {e}. If needed, install the Tesseract OCR desktop app and restart the agent."
+
+
+def _match_desktop_target(text: str, nth: int = 0):
+    needle = text.lower().strip()
+    controls = _desktop_state.get("controls") or []
+    matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    if not matches:
+        controls, _note = _read_desktop_controls()
+        _desktop_state["controls"] = controls
+        matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    if not matches:
+        raise HTTPException(404, f"No visible desktop control found matching: {text}")
+    return matches[max(0, min(nth, len(matches) - 1))]
+
 app = FastAPI(title="JARVIS Local Agent")
 
 # CORS — allow the web UI to call us from any origin (you control the browser).
@@ -448,6 +642,124 @@ def system_info():
     except ImportError:
         info["note"] = "Install `psutil` for CPU/RAM/disk metrics."
     return info
+
+
+class DesktopClick(BaseModel):
+    x: int | None = None
+    y: int | None = None
+    text: str | None = None
+    nth: int = 0
+    button: str = "left"
+    clicks: int = 1
+
+
+class DesktopType(BaseModel):
+    text: str
+    submit: bool = False
+
+
+class DesktopHotkey(BaseModel):
+    keys: list[str]
+
+
+class DesktopKey(BaseModel):
+    key: str
+
+
+class DesktopScroll(BaseModel):
+    amount: int = -5
+
+
+# ===================== DESKTOP COWORK =====================
+@app.post("/tool/desktop_read")
+def desktop_read():
+    pyautogui = _import_pyautogui()
+    try:
+        size = pyautogui.size()
+        pos = pyautogui.position()
+        screenshot = pyautogui.screenshot()
+        controls, controls_note = _read_desktop_controls()
+        ocr, ocr_note = _read_desktop_ocr(screenshot)
+        _desktop_state["controls"] = controls + ocr
+        return {
+            "ok": True,
+            "screen": {"width": size.width, "height": size.height},
+            "mouse": {"x": pos.x, "y": pos.y},
+            "active_window": _active_window_info(),
+            "controls": controls,
+            "ocr": ocr,
+            "notes": [n for n in [controls_note, ocr_note] if n],
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Desktop read failed: {e}")
+
+
+@app.post("/tool/desktop_click")
+def desktop_click(arg: DesktopClick):
+    pyautogui = _import_pyautogui()
+    try:
+        if arg.text:
+            target = _match_desktop_target(arg.text, arg.nth)
+            x, y = int(target["x"]), int(target["y"])
+        elif arg.x is not None and arg.y is not None:
+            x, y = int(arg.x), int(arg.y)
+        else:
+            raise HTTPException(400, "desktop_click requires either x/y coordinates or text")
+        pyautogui.moveTo(x, y, duration=0.15)
+        pyautogui.click(x=x, y=y, clicks=max(1, int(arg.clicks)), button=arg.button)
+        return {"ok": True, "clicked": {"x": x, "y": y, "text": arg.text, "nth": arg.nth}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Desktop click failed: {e}")
+
+
+@app.post("/tool/desktop_type")
+def desktop_type(arg: DesktopType):
+    pyautogui = _import_pyautogui()
+    try:
+        pyperclip = _import_pyperclip()
+        if pyperclip:
+            pyperclip.copy(arg.text)
+            pyautogui.hotkey("command" if IS_MAC else "ctrl", "v")
+        else:
+            pyautogui.write(arg.text, interval=0.01)
+        if arg.submit:
+            pyautogui.press("enter")
+        return {"ok": True, "typed": arg.text, "submit": arg.submit}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop type failed: {e}")
+
+
+@app.post("/tool/desktop_hotkey")
+def desktop_hotkey(arg: DesktopHotkey):
+    pyautogui = _import_pyautogui()
+    try:
+        keys = [k.lower().replace("control", "ctrl").replace("cmd", "command") for k in arg.keys]
+        pyautogui.hotkey(*keys)
+        return {"ok": True, "keys": keys}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop hotkey failed: {e}")
+
+
+@app.post("/tool/desktop_press")
+def desktop_press(arg: DesktopKey):
+    pyautogui = _import_pyautogui()
+    try:
+        pyautogui.press(arg.key.lower())
+        return {"ok": True, "pressed": arg.key}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop key press failed: {e}")
+
+
+@app.post("/tool/desktop_scroll")
+def desktop_scroll(arg: DesktopScroll):
+    pyautogui = _import_pyautogui()
+    try:
+        pyautogui.scroll(int(arg.amount))
+        return {"ok": True, "amount": arg.amount}
+    except Exception as e:
+        raise HTTPException(500, f"Desktop scroll failed: {e}")
 
 
 # ===================== BROWSER COWORK =====================
@@ -648,6 +960,7 @@ if __name__ == "__main__":
     print("  J.A.R.V.I.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
     print("  Browser cowork: ask JARVIS to 'open a browser and...'")
+    print("  Desktop cowork: ask JARVIS to inspect/click/type in desktop apps.")
     print("  Keep this window open while using the JARVIS web UI.")
     print("=" * 60)
     uvicorn.run(app, host="127.0.0.1", port=7337, log_level="info")
