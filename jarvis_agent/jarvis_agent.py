@@ -454,32 +454,73 @@ def _read_desktop_controls(max_controls: int = 120):
         return [], f"Windows UI Automation read failed: {e}"
 
 
-def _read_desktop_ocr(screenshot, max_items: int = 80):
+def _read_desktop_ocr(screenshot, max_items: int = 200):
     pytesseract = _import_pytesseract()
     if pytesseract is None:
-        return [], "OCR unavailable. For screen text recognition install Tesseract OCR, or rely on UI Automation controls."
+        return [], "OCR unavailable. Install pytesseract: pip install pytesseract"
+
+    binary = _locate_tesseract_binary()
+    if not binary:
+        return [], (
+            "Tesseract OCR binary not found. Install it from "
+            "https://github.com/UB-Mannheim/tesseract/wiki (Windows) or "
+            "`brew install tesseract` / `apt install tesseract-ocr`, then restart the agent."
+        )
 
     try:
         data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
-        items = []
-        words = len(data.get("text", []))
-        for i in range(words):
+        # Group words by (block, paragraph, line) so multi-word labels like
+        # "Enter the Game" become one clickable item instead of three fragments.
+        lines: dict[tuple, dict] = {}
+        n = len(data.get("text", []))
+        for i in range(n):
             text = (data["text"][i] or "").strip()
             if not text:
                 continue
             try:
                 conf = float(data.get("conf", [0])[i])
             except Exception:
-                conf = 0
-            if conf < 45:
+                conf = 0.0
+            # Keep low-confidence words too — game launchers often score poorly
+            if conf < 25:
                 continue
-            x, y, w, h = int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])
-            items.append({"index": len(items), "text": text[:80], "confidence": round(conf, 1), "x": x + w // 2, "y": y + h // 2, "bounds": [x, y, x + w, y + h]})
-            if len(items) >= max_items:
-                break
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+            x, y = int(data["left"][i]), int(data["top"][i])
+            w, h = int(data["width"][i]), int(data["height"][i])
+            entry = lines.setdefault(key, {"words": [], "x1": x, "y1": y, "x2": x + w, "y2": y + h, "conf_sum": 0.0, "conf_n": 0})
+            entry["words"].append(text)
+            entry["x1"] = min(entry["x1"], x)
+            entry["y1"] = min(entry["y1"], y)
+            entry["x2"] = max(entry["x2"], x + w)
+            entry["y2"] = max(entry["y2"], y + h)
+            entry["conf_sum"] += conf
+            entry["conf_n"] += 1
+
+        items = []
+        for entry in lines.values():
+            phrase = " ".join(entry["words"]).strip()
+            if not phrase:
+                continue
+            x1, y1, x2, y2 = entry["x1"], entry["y1"], entry["x2"], entry["y2"]
+            avg_conf = entry["conf_sum"] / max(1, entry["conf_n"])
+            items.append({
+                "index": len(items),
+                "text": phrase[:160],
+                "confidence": round(avg_conf, 1),
+                "x": (x1 + x2) // 2,
+                "y": (y1 + y2) // 2,
+                "bounds": [x1, y1, x2, y2],
+            })
+
+        # Highest confidence first so the AI sees the strongest matches first
+        items.sort(key=lambda it: -it["confidence"])
+        items = items[:max_items]
+        # Reindex after sort/truncate
+        for i, it in enumerate(items):
+            it["index"] = i
         return items, None
     except Exception as e:
-        return [], f"OCR failed: {e}. If needed, install the Tesseract OCR desktop app and restart the agent."
+        return [], f"OCR failed: {e}. Make sure the Tesseract OCR desktop app is installed and restart the agent."
 
 
 def _match_desktop_target(text: str, nth: int = 0):
