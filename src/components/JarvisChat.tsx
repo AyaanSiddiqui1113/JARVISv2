@@ -96,11 +96,40 @@ export function JarvisChat() {
             try { args = JSON.parse(tc.function.arguments || "{}"); } catch {}
             setThinking(`Running: ${fname}`);
             const result = await executeTool(fname, args);
-            toolRecords.push({ name: fname, args, result });
+
+            // If the tool returned a screenshot, strip the giant base64 from the
+            // text result the AI sees, but ALSO push it as a vision message so
+            // the model can literally see the screen like a human.
+            let textResult = result;
+            let screenshotB64: string | null = null;
+            let screenshotMime = "image/jpeg";
+            try {
+              const parsed = JSON.parse(result);
+              if (parsed && typeof parsed === "object" && parsed.screenshot_b64) {
+                screenshotB64 = parsed.screenshot_b64;
+                screenshotMime = parsed.screenshot_mime || "image/jpeg";
+                const { screenshot_b64: _drop, ...rest } = parsed;
+                textResult = JSON.stringify({ ...rest, screenshot: "[attached as image to next message]" });
+              }
+            } catch {}
+
+            toolRecords.push({ name: fname, args, result: textResult });
             history = [
               ...history,
-              { role: "tool", tool_call_id: tc.id, content: result },
+              { role: "tool", tool_call_id: tc.id, content: textResult },
             ];
+            if (screenshotB64) {
+              history = [
+                ...history,
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: `Screen capture from ${fname}. Identify targets visually and click by x/y coordinates from the screen size in the previous tool result.` },
+                    { type: "image_url", image_url: { url: `data:${screenshotMime};base64,${screenshotB64}` } },
+                  ] as any,
+                },
+              ];
+            }
           }
           // Show tools in chat
           setMessages([
