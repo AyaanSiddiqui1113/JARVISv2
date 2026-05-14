@@ -156,20 +156,51 @@ def _import_cv2():
             return None
 
 
+_TESSERACT_CANDIDATE_PATHS = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"),
+    os.path.expanduser(r"~\AppData\Local\Tesseract-OCR\tesseract.exe"),
+    "/opt/homebrew/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/usr/bin/tesseract",
+]
+
+
+def _locate_tesseract_binary():
+    """Find the Tesseract binary on disk even if it isn't in PATH."""
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    for candidate in _TESSERACT_CANDIDATE_PATHS:
+        try:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def _import_pytesseract():
     """Optional OCR import; requires the Tesseract desktop app to be installed too."""
     try:
         import pytesseract  # type: ignore
-        return pytesseract
     except ImportError:
         install = _run_current_python_module("pip", "install", "pytesseract")
         if install.returncode != 0:
             return None
         try:
             import pytesseract  # type: ignore
-            return pytesseract
         except ImportError:
             return None
+    # Auto-wire the binary path on Windows where Tesseract is rarely in PATH.
+    try:
+        binary = _locate_tesseract_binary()
+        if binary:
+            pytesseract.pytesseract.tesseract_cmd = binary
+    except Exception:
+        pass
+    return pytesseract
 
 
 def _import_pywinauto():
