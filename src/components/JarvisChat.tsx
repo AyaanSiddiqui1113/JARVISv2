@@ -131,13 +131,8 @@ export function JarvisChat() {
               ];
             }
           }
-          // Show tools in chat
-          setMessages([
-            ...history.slice(0, -toolCalls.length - 1),
-            history[history.length - toolCalls.length - 1],
-            ...history.slice(-toolCalls.length),
-            { role: "assistant", content: "", display: { tools: toolRecords } },
-          ]);
+          // Show tools in chat — keep full history (incl. any vision messages) and append the tools panel
+          setMessages([...history, { role: "assistant", content: "", display: { tools: toolRecords } }]);
           continue;
         }
 
