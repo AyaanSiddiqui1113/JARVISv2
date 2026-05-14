@@ -788,6 +788,28 @@ class DesktopScroll(BaseModel):
 
 
 # ===================== DESKTOP COWORK =====================
+def _encode_screenshot(screenshot, max_width: int = 1280, quality: int = 70) -> str | None:
+    """Downscale + JPEG-encode the screenshot as base64 so the AI can SEE it."""
+    try:
+        import io, base64
+        img = screenshot
+        w, h = img.size
+        if w > max_width:
+            new_h = int(h * (max_width / w))
+            try:
+                from PIL import Image  # type: ignore
+                img = img.resize((max_width, new_h), Image.LANCZOS)
+            except Exception:
+                img = img.resize((max_width, new_h))
+        buf = io.BytesIO()
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
 @app.post("/tool/desktop_read")
 def desktop_read():
     pyautogui = _import_pyautogui()
@@ -798,6 +820,10 @@ def desktop_read():
         controls, controls_note = _read_desktop_controls()
         ocr, ocr_note = _read_desktop_ocr(screenshot)
         _desktop_state["controls"] = controls + ocr
+        screenshot_b64 = _encode_screenshot(screenshot)
+        # Scale ratio so the model can convert pixel coords from the downscaled
+        # image back to real screen coords if needed. Right now we send full-res
+        # mapping in metadata.
         return {
             "ok": True,
             "screen": {"width": size.width, "height": size.height},
@@ -806,9 +832,28 @@ def desktop_read():
             "controls": controls,
             "ocr": ocr,
             "notes": [n for n in [controls_note, ocr_note] if n],
+            "screenshot_b64": screenshot_b64,
+            "screenshot_mime": "image/jpeg",
         }
     except Exception as e:
         raise HTTPException(500, f"Desktop read failed: {e}")
+
+
+@app.post("/tool/desktop_screenshot")
+def desktop_screenshot():
+    """Just the screenshot — for when the AI wants a fresh view without re-running OCR."""
+    pyautogui = _import_pyautogui()
+    try:
+        size = pyautogui.size()
+        screenshot = pyautogui.screenshot()
+        return {
+            "ok": True,
+            "screen": {"width": size.width, "height": size.height},
+            "screenshot_b64": _encode_screenshot(screenshot),
+            "screenshot_mime": "image/jpeg",
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Screenshot failed: {e}")
 
 
 @app.post("/tool/desktop_click")
