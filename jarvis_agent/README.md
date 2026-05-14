@@ -30,7 +30,12 @@ status indicator should turn cyan within ~5 seconds.
 | `browser_*` | **Cowork mode** — JARVIS drives your installed Chrome with Selenium and a glowing red cursor overlay; you use the same window with your normal cursor |
 | `desktop_*` | **Desktop cowork mode** — JARVIS inspects the active desktop app and uses mouse/keyboard control for launchers, installers, settings windows, etc. |
 
-Desktop OCR is optional. If you want JARVIS to read text from screenshots when normal Windows UI controls are not exposed, install the Tesseract OCR desktop app and restart the agent.
+**Desktop OCR (REQUIRED for game launchers, custom canvases, Java apps like TLauncher).** Windows UI Automation cannot see custom-drawn buttons, so JARVIS falls back to OCR. Install the Tesseract OCR desktop app:
+- **Windows:** https://github.com/UB-Mannheim/tesseract/wiki — install to the default path, then restart the agent. JARVIS auto-locates `tesseract.exe` in `C:\Program Files\Tesseract-OCR\`.
+- **macOS:** `brew install tesseract`
+- **Linux:** `sudo apt install tesseract-ocr`
+
+Without Tesseract, JARVIS can't read buttons like "Enter the Game" in TLauncher.
 
 ## ⚠️ Security
 

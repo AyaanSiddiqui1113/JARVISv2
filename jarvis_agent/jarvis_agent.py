@@ -156,20 +156,51 @@ def _import_cv2():
             return None
 
 
+_TESSERACT_CANDIDATE_PATHS = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"),
+    os.path.expanduser(r"~\AppData\Local\Tesseract-OCR\tesseract.exe"),
+    "/opt/homebrew/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/usr/bin/tesseract",
+]
+
+
+def _locate_tesseract_binary():
+    """Find the Tesseract binary on disk even if it isn't in PATH."""
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    for candidate in _TESSERACT_CANDIDATE_PATHS:
+        try:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def _import_pytesseract():
     """Optional OCR import; requires the Tesseract desktop app to be installed too."""
     try:
         import pytesseract  # type: ignore
-        return pytesseract
     except ImportError:
         install = _run_current_python_module("pip", "install", "pytesseract")
         if install.returncode != 0:
             return None
         try:
             import pytesseract  # type: ignore
-            return pytesseract
         except ImportError:
             return None
+    # Auto-wire the binary path on Windows where Tesseract is rarely in PATH.
+    try:
+        binary = _locate_tesseract_binary()
+        if binary:
+            pytesseract.pytesseract.tesseract_cmd = binary
+    except Exception:
+        pass
+    return pytesseract
 
 
 def _import_pywinauto():
@@ -423,44 +454,130 @@ def _read_desktop_controls(max_controls: int = 120):
         return [], f"Windows UI Automation read failed: {e}"
 
 
-def _read_desktop_ocr(screenshot, max_items: int = 80):
+def _read_desktop_ocr(screenshot, max_items: int = 200):
     pytesseract = _import_pytesseract()
     if pytesseract is None:
-        return [], "OCR unavailable. For screen text recognition install Tesseract OCR, or rely on UI Automation controls."
+        return [], "OCR unavailable. Install pytesseract: pip install pytesseract"
+
+    binary = _locate_tesseract_binary()
+    if not binary:
+        return [], (
+            "Tesseract OCR binary not found. Install it from "
+            "https://github.com/UB-Mannheim/tesseract/wiki (Windows) or "
+            "`brew install tesseract` / `apt install tesseract-ocr`, then restart the agent."
+        )
 
     try:
         data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
-        items = []
-        words = len(data.get("text", []))
-        for i in range(words):
+        # Group words by (block, paragraph, line) so multi-word labels like
+        # "Enter the Game" become one clickable item instead of three fragments.
+        lines: dict[tuple, dict] = {}
+        n = len(data.get("text", []))
+        for i in range(n):
             text = (data["text"][i] or "").strip()
             if not text:
                 continue
             try:
                 conf = float(data.get("conf", [0])[i])
             except Exception:
-                conf = 0
-            if conf < 45:
+                conf = 0.0
+            # Keep low-confidence words too — game launchers often score poorly
+            if conf < 25:
                 continue
-            x, y, w, h = int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])
-            items.append({"index": len(items), "text": text[:80], "confidence": round(conf, 1), "x": x + w // 2, "y": y + h // 2, "bounds": [x, y, x + w, y + h]})
-            if len(items) >= max_items:
-                break
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+            x, y = int(data["left"][i]), int(data["top"][i])
+            w, h = int(data["width"][i]), int(data["height"][i])
+            entry = lines.setdefault(key, {"words": [], "x1": x, "y1": y, "x2": x + w, "y2": y + h, "conf_sum": 0.0, "conf_n": 0})
+            entry["words"].append(text)
+            entry["x1"] = min(entry["x1"], x)
+            entry["y1"] = min(entry["y1"], y)
+            entry["x2"] = max(entry["x2"], x + w)
+            entry["y2"] = max(entry["y2"], y + h)
+            entry["conf_sum"] += conf
+            entry["conf_n"] += 1
+
+        items = []
+        for entry in lines.values():
+            phrase = " ".join(entry["words"]).strip()
+            if not phrase:
+                continue
+            x1, y1, x2, y2 = entry["x1"], entry["y1"], entry["x2"], entry["y2"]
+            avg_conf = entry["conf_sum"] / max(1, entry["conf_n"])
+            items.append({
+                "index": len(items),
+                "text": phrase[:160],
+                "confidence": round(avg_conf, 1),
+                "x": (x1 + x2) // 2,
+                "y": (y1 + y2) // 2,
+                "bounds": [x1, y1, x2, y2],
+            })
+
+        # Highest confidence first so the AI sees the strongest matches first
+        items.sort(key=lambda it: -it["confidence"])
+        items = items[:max_items]
+        # Reindex after sort/truncate
+        for i, it in enumerate(items):
+            it["index"] = i
         return items, None
     except Exception as e:
-        return [], f"OCR failed: {e}. If needed, install the Tesseract OCR desktop app and restart the agent."
+        return [], f"OCR failed: {e}. Make sure the Tesseract OCR desktop app is installed and restart the agent."
+
+
+def _score_target(needle_tokens: list[str], candidate_text: str) -> float:
+    """Higher = better. 0 = no match. Substring beats token overlap beats nothing."""
+    cand = (candidate_text or "").lower()
+    if not cand or not needle_tokens:
+        return 0.0
+    full = " ".join(needle_tokens)
+    if full in cand:
+        # Reward shorter candidates (more specific) when full phrase matches
+        return 1000.0 - min(len(cand), 500)
+    matched = sum(1 for tok in needle_tokens if tok in cand)
+    if matched == 0:
+        return 0.0
+    # Require at least half the tokens to consider it a fuzzy match
+    if matched * 2 < len(needle_tokens):
+        return 0.0
+    return 100.0 * matched / len(needle_tokens) - min(len(cand), 200) * 0.01
 
 
 def _match_desktop_target(text: str, nth: int = 0):
-    needle = text.lower().strip()
-    controls = _desktop_state.get("controls") or []
-    matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    needle = (text or "").lower().strip()
+    if not needle:
+        raise HTTPException(400, "desktop_click requires either coordinates or text")
+    tokens = [t for t in needle.split() if t]
+
+    def best_matches(candidates):
+        scored = [(c, _score_target(tokens, c.get("text", ""))) for c in candidates]
+        scored = [s for s in scored if s[1] > 0]
+        scored.sort(key=lambda s: -s[1])
+        return [c for c, _ in scored]
+
+    matches = best_matches(_desktop_state.get("controls") or [])
     if not matches:
-        controls, _note = _read_desktop_controls()
-        _desktop_state["controls"] = controls
-        matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+        # Refresh both UIA controls and OCR phrases, then retry
+        pyautogui = _import_pyautogui()
+        screenshot = None
+        try:
+            screenshot = pyautogui.screenshot()
+        except Exception:
+            pass
+        controls, _ = _read_desktop_controls()
+        ocr = []
+        if screenshot is not None:
+            ocr, _ = _read_desktop_ocr(screenshot)
+        _desktop_state["controls"] = controls + ocr
+        matches = best_matches(_desktop_state["controls"])
+
     if not matches:
-        raise HTTPException(404, f"No visible desktop control found matching: {text}")
+        # Tell the AI what IS visible so it can pick coordinates instead of giving up
+        visible = [c.get("text") for c in (_desktop_state.get("controls") or [])][:30]
+        raise HTTPException(
+            404,
+            f"No visible desktop control found matching: {text}. "
+            f"Currently detected (top 30): {visible}. "
+            "Try desktop_read again, then click by exact text or x/y coordinates."
+        )
     return matches[max(0, min(nth, len(matches) - 1))]
 
 app = FastAPI(title="JARVIS Local Agent")
