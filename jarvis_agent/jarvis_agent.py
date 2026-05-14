@@ -523,16 +523,61 @@ def _read_desktop_ocr(screenshot, max_items: int = 200):
         return [], f"OCR failed: {e}. Make sure the Tesseract OCR desktop app is installed and restart the agent."
 
 
+def _score_target(needle_tokens: list[str], candidate_text: str) -> float:
+    """Higher = better. 0 = no match. Substring beats token overlap beats nothing."""
+    cand = (candidate_text or "").lower()
+    if not cand or not needle_tokens:
+        return 0.0
+    full = " ".join(needle_tokens)
+    if full in cand:
+        # Reward shorter candidates (more specific) when full phrase matches
+        return 1000.0 - min(len(cand), 500)
+    matched = sum(1 for tok in needle_tokens if tok in cand)
+    if matched == 0:
+        return 0.0
+    # Require at least half the tokens to consider it a fuzzy match
+    if matched * 2 < len(needle_tokens):
+        return 0.0
+    return 100.0 * matched / len(needle_tokens) - min(len(cand), 200) * 0.01
+
+
 def _match_desktop_target(text: str, nth: int = 0):
-    needle = text.lower().strip()
-    controls = _desktop_state.get("controls") or []
-    matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+    needle = (text or "").lower().strip()
+    if not needle:
+        raise HTTPException(400, "desktop_click requires either coordinates or text")
+    tokens = [t for t in needle.split() if t]
+
+    def best_matches(candidates):
+        scored = [(c, _score_target(tokens, c.get("text", ""))) for c in candidates]
+        scored = [s for s in scored if s[1] > 0]
+        scored.sort(key=lambda s: -s[1])
+        return [c for c, _ in scored]
+
+    matches = best_matches(_desktop_state.get("controls") or [])
     if not matches:
-        controls, _note = _read_desktop_controls()
-        _desktop_state["controls"] = controls
-        matches = [c for c in controls if needle and needle in (c.get("text") or "").lower()]
+        # Refresh both UIA controls and OCR phrases, then retry
+        pyautogui = _import_pyautogui()
+        screenshot = None
+        try:
+            screenshot = pyautogui.screenshot()
+        except Exception:
+            pass
+        controls, _ = _read_desktop_controls()
+        ocr = []
+        if screenshot is not None:
+            ocr, _ = _read_desktop_ocr(screenshot)
+        _desktop_state["controls"] = controls + ocr
+        matches = best_matches(_desktop_state["controls"])
+
     if not matches:
-        raise HTTPException(404, f"No visible desktop control found matching: {text}")
+        # Tell the AI what IS visible so it can pick coordinates instead of giving up
+        visible = [c.get("text") for c in (_desktop_state.get("controls") or [])][:30]
+        raise HTTPException(
+            404,
+            f"No visible desktop control found matching: {text}. "
+            f"Currently detected (top 30): {visible}. "
+            "Try desktop_read again, then click by exact text or x/y coordinates."
+        )
     return matches[max(0, min(nth, len(matches) - 1))]
 
 app = FastAPI(title="JARVIS Local Agent")
