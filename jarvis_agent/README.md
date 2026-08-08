@@ -56,3 +56,16 @@ it like a remote-code-execution endpoint — because that's what it is.
 > "Install ripgrep using my system package manager"
 > "Open github.com in my browser"
 > "Create a new folder ~/jarvis-test and write a hello.txt inside it"
+
+## ESP / IoT projects (generic)
+
+`esp_manager.py` must sit next to `jarvis_agent.py`. Registered projects are saved to
+`esp_projects.json` in the same folder, so they survive restarts and never leave your machine.
+
+Register a project either in the web UI ("ESP / DEVICES") or just by telling JARVIS:
+
+> "I made a project called Smart Aquarium at 192.168.1.42. POST /pump/on turns the pump on,
+> POST /pump/off turns it off, and POST /led/{brightness} sets the LED from 0-100."
+
+Then: "Turn the aquarium pump on." — the agent performs the HTTP request on your LAN.
+No JARVIS code changes are ever needed for a new project.

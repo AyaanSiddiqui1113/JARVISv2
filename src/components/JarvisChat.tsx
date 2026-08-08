@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ArcReactor } from "@/components/ArcReactor";
 import { checkAgentStatus, executeTool } from "@/lib/jarvis-agent";
+import { Link } from "@tanstack/react-router";
 import { Send, Power, Terminal, Cpu, Wifi, WifiOff } from "lucide-react";
 
 type ToolCallRecord = { name: string; args: any; result: string };
@@ -177,6 +178,12 @@ export function JarvisChat() {
             ok={agentOnline}
           />
           <Stat icon={<Power size={14} />} label="STATUS" value={busy ? "WORKING" : "READY"} ok />
+          <Link
+            to="/devices"
+            className="panel px-3 py-1.5 font-display tracking-wider text-primary hover:bg-primary/10"
+          >
+            ESP / DEVICES
+          </Link>
         </div>
       </header>
 

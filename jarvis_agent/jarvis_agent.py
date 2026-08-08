@@ -1116,12 +1116,145 @@ def browser_close():
             _browser_state.update({"driver": None})
     return {"ok": True}
 
+
+# --------------------------------------------------------------------------- #
+# ESP / IoT generic project routes (see esp_manager.py)
+# --------------------------------------------------------------------------- #
+try:
+    import esp_manager
+except Exception:  # pragma: no cover - keeps the agent alive if the file is missing
+    esp_manager = None
+
+
+def _esp():
+    if esp_manager is None:
+        raise HTTPException(500, "esp_manager.py is missing next to jarvis_agent.py")
+    return esp_manager
+
+
+def _esp_call(fn, *args, **kwargs):
+    mgr = _esp()
+    try:
+        return fn(*args, **kwargs)
+    except mgr.EspError as e:
+        raise HTTPException(400, str(e))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+
+
+@app.get("/esp/projects")
+def esp_projects_list():
+    mgr = _esp()
+    return {"projects": [mgr.redact(p) for p in mgr.list_projects()], "store": str(mgr.STORE_PATH)}
+
+
+@app.post("/esp/projects")
+async def esp_projects_save(request: Request):
+    mgr = _esp()
+    payload = await request.json()
+    if isinstance(payload, dict) and "project" in payload:
+        payload = payload["project"]
+    project = _esp_call(mgr.save_project, payload)
+    return {"ok": True, "project": mgr.redact(project)}
+
+
+@app.delete("/esp/projects/{project_id}")
+def esp_projects_delete(project_id: str):
+    mgr = _esp()
+    if not _esp_call(mgr.delete_project, project_id):
+        raise HTTPException(404, f"No project '{project_id}'")
+    return {"ok": True, "deleted": project_id}
+
+
+@app.get("/esp/projects/{project_id}/status")
+def esp_project_status(project_id: str):
+    return _esp_call(_esp().project_status, project_id)
+
+
+class EspCommandIn(BaseModel):
+    project_id: str
+    device_id: str
+    command_id: str
+    parameters: dict | None = None
+
+
+@app.post("/esp/execute")
+def esp_execute(payload: EspCommandIn):
+    return _esp_call(
+        _esp().execute_device_command,
+        payload.project_id,
+        payload.device_id,
+        payload.command_id,
+        payload.parameters or {},
+    )
+
+
+# ---- AI-facing tools (same /tool/<name> convention as every other tool) ----
+@app.post("/tool/esp_list_projects")
+def tool_esp_list_projects():
+    return _esp().capabilities_summary()
+
+
+@app.post("/tool/esp_get_project")
+async def tool_esp_get_project(request: Request):
+    mgr = _esp()
+    body = await request.json()
+    project = mgr.get_project(str(body.get("project_id", "")))
+    if not project:
+        raise HTTPException(404, f"No registered project matching '{body.get('project_id')}'")
+    return mgr.redact(project)
+
+
+@app.post("/tool/esp_register_project")
+async def tool_esp_register_project(request: Request):
+    mgr = _esp()
+    body = await request.json()
+    if isinstance(body, dict) and "project" in body:
+        body = body["project"]
+    project = _esp_call(mgr.save_project, body)
+    return {
+        "ok": True,
+        "registered": mgr.redact(project),
+        "summary": f"{project['name']} @ {project['protocol']}://{project['host']} with "
+                   f"{len(project['devices'])} device(s)",
+    }
+
+
+@app.post("/tool/esp_delete_project")
+async def tool_esp_delete_project(request: Request):
+    body = await request.json()
+    if not _esp_call(_esp().delete_project, str(body.get("project_id", ""))):
+        raise HTTPException(404, f"No project '{body.get('project_id')}'")
+    return {"ok": True}
+
+
+@app.post("/tool/esp_status")
+async def tool_esp_status(request: Request):
+    body = await request.json()
+    return _esp_call(_esp().project_status, str(body.get("project_id", "")))
+
+
+@app.post("/tool/device_command")
+async def tool_device_command(request: Request):
+    body = await request.json()
+    return _esp_call(
+        _esp().execute_device_command,
+        str(body.get("project_id", "")),
+        str(body.get("device_id", "")),
+        str(body.get("command_id", "")),
+        body.get("parameters") or {},
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
     print("  J.A.R.V.I.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
     print("  Browser cowork: ask JARVIS to 'open a browser and...'")
+    print("  ESP/IoT: register projects in the web UI or by describing them to JARVIS.")
     print("  Desktop cowork: ask JARVIS to inspect/click/type in desktop apps.")
     print("  Keep this window open while using the JARVIS web UI.")
     print("=" * 60)
