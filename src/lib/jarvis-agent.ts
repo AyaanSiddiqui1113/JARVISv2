@@ -20,7 +20,7 @@ export async function checkAgentStatus(): Promise<boolean> {
   return false;
 }
 
-async function fetchAgent(path: string, init: RequestInit) {
+export async function fetchAgent(path: string, init: RequestInit = {}) {
   let lastError: unknown;
 
   for (const agentUrl of AGENT_URLS) {
