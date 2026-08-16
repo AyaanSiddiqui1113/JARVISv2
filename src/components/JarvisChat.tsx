@@ -242,7 +242,7 @@ export function JarvisChat() {
           <button
             onClick={voice.toggle}
             disabled={!voice.supported}
-            title={voice.supported ? 'Toggle always-listening. Say "JARVIS, ..." to command me.' : "Speech recognition not supported in this browser"}
+            title={voice.supported ? "Toggle voice input. When listening, speak your command and I'll execute it." : "Speech recognition not supported in this browser"}
             className={`h-12 w-12 rounded-md border font-display transition flex items-center justify-center ${
               voice.listening
                 ? "bg-primary/20 border-primary text-primary glow-ring animate-pulse"
@@ -276,11 +276,7 @@ export function JarvisChat() {
         </div>
         {voice.listening && (
           <div className="mx-auto max-w-4xl mt-2 text-xs font-mono text-muted-foreground">
-            {voice.awake ? (
-              <span className="text-primary text-glow">Listening for your command, sir…</span>
-            ) : (
-              <>Say <span className="text-primary">“JARVIS”</span> followed by your command.</>
-            )}
+            <span className="text-primary text-glow">Listening for your command, sir…</span>
             {voice.heard && <span className="ml-2 italic text-accent">{voice.heard}</span>}
           </div>
         )}

@@ -15,7 +15,7 @@ function getRecognition(): SR | null {
   return Ctor ? new Ctor() : null;
 }
 
-const WAKE = /\b(jarvis|jervis|jarvace|jarv)\b/i;
+
 
 export function useVoice(onCommand: (text: string) => void) {
   const [supported, setSupported] = useState(false);
@@ -39,28 +39,10 @@ export function useVoice(onCommand: (text: string) => void) {
   const handleFinal = useCallback((raw: string) => {
     const text = raw.trim();
     if (!text) return;
-    if (forceRef.current) {
-      forceRef.current = false;
-      setAwake(false);
-      cmdRef.current(text);
-      return;
-    }
-    const m = text.match(WAKE);
-    if (m) {
-      const rest = text.slice((m.index ?? 0) + m[0].length).replace(/^[\s,.:;-]+/, "");
-      if (rest) {
-        setAwake(false);
-        cmdRef.current(rest);
-      } else {
-        setAwake(true); // wake word only — next utterance is the command
-      }
-      return;
-    }
-    if (awake) {
-      setAwake(false);
-      cmdRef.current(text);
-    }
-  }, [awake]);
+    if (forceRef.current) forceRef.current = false;
+    setAwake(false);
+    cmdRef.current(text);
+  }, []);
 
   const start = useCallback((force = false) => {
     const rec = getRecognition();
