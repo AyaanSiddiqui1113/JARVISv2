@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ArcReactor } from "@/components/ArcReactor";
 import { checkAgentStatus, executeTool } from "@/lib/jarvis-agent";
+import { useVoice } from "@/hooks/useVoice";
 import { Link } from "@tanstack/react-router";
-import { Send, Power, Terminal, Cpu, Wifi, WifiOff } from "lucide-react";
+import { Send, Power, Terminal, Cpu, Wifi, WifiOff, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+
 
 type ToolCallRecord = { name: string; args: any; result: string };
 type Msg = {
