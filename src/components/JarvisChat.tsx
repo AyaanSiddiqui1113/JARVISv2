@@ -190,6 +190,13 @@ export function JarvisChat() {
             ok={agentOnline}
           />
           <Stat icon={<Power size={14} />} label="STATUS" value={busy ? "WORKING" : "READY"} ok />
+          <Stat
+            icon={voice.listening ? <Mic size={14} /> : <MicOff size={14} />}
+            label="VOICE"
+            value={!voice.supported ? "N/A" : voice.listening ? (voice.awake ? "AWAKE" : "WAKE WORD") : "OFF"}
+            ok={voice.listening}
+          />
+
           <Link
             to="/devices"
             className="panel px-3 py-1.5 font-display tracking-wider text-primary hover:bg-primary/10"
