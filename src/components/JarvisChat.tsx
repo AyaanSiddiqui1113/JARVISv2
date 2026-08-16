@@ -150,7 +150,9 @@ export function JarvisChat() {
         // Final assistant message
         history = [...history, { role: "assistant", content: msg.content || "" }];
         setMessages(history);
+        if (msg.content) voice.speak(msg.content);
         break;
+
       }
     } catch (e) {
       setMessages((m) => [
