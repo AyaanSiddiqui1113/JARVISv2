@@ -240,7 +240,33 @@ export function JarvisChat() {
             />
           </div>
           <button
-            onClick={send}
+            onClick={voice.toggle}
+            disabled={!voice.supported}
+            title={voice.supported ? 'Toggle always-listening. Say "JARVIS, ..." to command me.' : "Speech recognition not supported in this browser"}
+            className={`h-12 w-12 rounded-md border font-display transition flex items-center justify-center ${
+              voice.listening
+                ? "bg-primary/20 border-primary text-primary glow-ring animate-pulse"
+                : "border-border text-muted-foreground hover:text-primary hover:border-primary"
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            {voice.listening ? <Mic size={18} /> : <MicOff size={18} />}
+          </button>
+          <button
+            onClick={() => {
+              if (voice.speakReplies) voice.stopSpeaking();
+              voice.setSpeakReplies(!voice.speakReplies);
+            }}
+            title={voice.speakReplies ? "Spoken replies on" : "Spoken replies off"}
+            className={`h-12 w-12 rounded-md border transition flex items-center justify-center ${
+              voice.speakReplies
+                ? `bg-accent/15 border-accent text-accent ${voice.speaking ? "animate-pulse" : ""}`
+                : "border-border text-muted-foreground hover:text-accent hover:border-accent"
+            }`}
+          >
+            {voice.speakReplies ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+          <button
+            onClick={() => send()}
             disabled={busy || !input.trim()}
             className="h-12 px-5 rounded-md bg-primary text-primary-foreground font-display tracking-wider text-sm hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed glow-ring transition"
           >
@@ -248,7 +274,18 @@ export function JarvisChat() {
             SEND
           </button>
         </div>
+        {voice.listening && (
+          <div className="mx-auto max-w-4xl mt-2 text-xs font-mono text-muted-foreground">
+            {voice.awake ? (
+              <span className="text-primary text-glow">Listening for your command, sir…</span>
+            ) : (
+              <>Say <span className="text-primary">“JARVIS”</span> followed by your command.</>
+            )}
+            {voice.heard && <span className="ml-2 italic text-accent">{voice.heard}</span>}
+          </div>
+        )}
       </footer>
+
     </div>
   );
 }
