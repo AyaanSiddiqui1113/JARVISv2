@@ -64,14 +64,22 @@ export function JarvisChat() {
     return r.json();
   }
 
-  async function send() {
-    const text = input.trim();
+  const voice = useVoice(
+    useCallback((spoken: string) => {
+      send(spoken);
+    }, []),
+  );
+
+  async function send(override?: string) {
+    const text = (override ?? input).trim();
     if (!text || busy) return;
-    setInput("");
+    if (!override) setInput("");
+    voice.stopSpeaking();
     setBusy(true);
 
     let history: Msg[] = [...messages, { role: "user", content: text }];
     setMessages(history);
+
 
     try {
       for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
