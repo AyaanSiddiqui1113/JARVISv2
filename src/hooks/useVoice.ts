@@ -15,7 +15,7 @@ function getRecognition(): SR | null {
   return Ctor ? new Ctor() : null;
 }
 
-const WAKE = /\b(jarvis|jervis|jarvace|jarv)\b/i;
+
 
 export function useVoice(onCommand: (text: string) => void) {
   const [supported, setSupported] = useState(false);
