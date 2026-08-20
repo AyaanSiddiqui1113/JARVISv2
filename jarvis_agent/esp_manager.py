@@ -1,11 +1,11 @@
 """
-JARVIS ESP / IoT Project Manager
+NEXUS ESP / IoT Project Manager
 ================================
 Generic, schema-driven registry of ESP8266 / ESP32 (or any HTTP/REST) projects.
 
 Design principle:
     NEW ESP PROJECT = REGISTER PROJECT + DESCRIBE ITS API
-    (never "modify JARVIS code")
+    (never "modify NEXUS code")
 
 This module is imported by jarvis_agent.py and mounted as a set of routes.
 Projects are stored in a plain JSON file next to the agent so they survive

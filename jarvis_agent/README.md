@@ -1,6 +1,6 @@
-# JARVIS Local Helper Agent
+# NEXUS Local Helper Agent
 
-This is the local Python program that gives JARVIS hands on your computer.
+This is the local Python program that gives NEXUS hands on your computer.
 The web UI talks to this agent (running on `127.0.0.1:7337`) every time it
 needs to actually do something — run a command, open a file, search your
 disk, install software, etc.
@@ -12,7 +12,7 @@ python -m pip install fastapi uvicorn psutil selenium pyautogui pillow pyperclip
 python jarvis_agent.py
 ```
 
-Leave the terminal window open. In the JARVIS web app, the **LOCAL AGENT**
+Leave the terminal window open. In the NEXUS web app, the **LOCAL AGENT**
 status indicator should turn cyan within ~5 seconds.
 
 ## What it can do
@@ -27,15 +27,15 @@ status indicator should turn cyan within ~5 seconds.
 | `read_file` | Reads a text file |
 | `write_file` | Writes/overwrites a text file |
 | `system_info` | Returns OS/CPU/RAM/disk info |
-| `browser_*` | **Cowork mode** — JARVIS drives your installed Chrome with Selenium and a glowing red cursor overlay; you use the same window with your normal cursor |
-| `desktop_*` | **Desktop cowork mode** — JARVIS inspects the active desktop app and uses mouse/keyboard control for launchers, installers, settings windows, etc. |
+| `browser_*` | **Cowork mode** — NEXUS drives your installed Chrome with Selenium and a glowing red cursor overlay; you use the same window with your normal cursor |
+| `desktop_*` | **Desktop cowork mode** — NEXUS inspects the active desktop app and uses mouse/keyboard control for launchers, installers, settings windows, etc. |
 
-**Desktop OCR (REQUIRED for game launchers, custom canvases, Java apps like TLauncher).** Windows UI Automation cannot see custom-drawn buttons, so JARVIS falls back to OCR. Install the Tesseract OCR desktop app:
-- **Windows:** https://github.com/UB-Mannheim/tesseract/wiki — install to the default path, then restart the agent. JARVIS auto-locates `tesseract.exe` in `C:\Program Files\Tesseract-OCR\`.
+**Desktop OCR (REQUIRED for game launchers, custom canvases, Java apps like TLauncher).** Windows UI Automation cannot see custom-drawn buttons, so NEXUS falls back to OCR. Install the Tesseract OCR desktop app:
+- **Windows:** https://github.com/UB-Mannheim/tesseract/wiki — install to the default path, then restart the agent. NEXUS auto-locates `tesseract.exe` in `C:\Program Files\Tesseract-OCR\`.
 - **macOS:** `brew install tesseract`
 - **Linux:** `sudo apt install tesseract-ocr`
 
-Without Tesseract, JARVIS can't read buttons like "Enter the Game" in TLauncher.
+Without Tesseract, NEXUS can't read buttons like "Enter the Game" in TLauncher.
 
 ## ⚠️ Security
 
@@ -43,10 +43,10 @@ This agent runs **arbitrary shell commands** the web UI tells it to. Treat
 it like a remote-code-execution endpoint — because that's what it is.
 
 - It binds to `127.0.0.1` only (not exposed to your network)
-- Only run it while you're actively using JARVIS
+- Only run it while you're actively using NEXUS
 - Don't expose port 7337 to the internet
 - You'll be asked to confirm destructive actions in chat, but ultimately
-  you control what JARVIS executes
+  you control what NEXUS executes
 
 ## Examples to try
 
@@ -62,10 +62,10 @@ it like a remote-code-execution endpoint — because that's what it is.
 `esp_manager.py` must sit next to `jarvis_agent.py`. Registered projects are saved to
 `esp_projects.json` in the same folder, so they survive restarts and never leave your machine.
 
-Register a project either in the web UI ("ESP / DEVICES") or just by telling JARVIS:
+Register a project either in the web UI ("ESP / DEVICES") or just by telling NEXUS:
 
 > "I made a project called Smart Aquarium at 192.168.1.42. POST /pump/on turns the pump on,
 > POST /pump/off turns it off, and POST /led/{brightness} sets the LED from 0-100."
 
 Then: "Turn the aquarium pump on." — the agent performs the HTTP request on your LAN.
-No JARVIS code changes are ever needed for a new project.
+No NEXUS code changes are ever needed for a new project.

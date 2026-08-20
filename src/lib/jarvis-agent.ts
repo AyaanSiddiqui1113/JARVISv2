@@ -45,7 +45,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
     if (!r.ok) return `ERROR (${r.status}): ${text}`;
     return text;
   } catch (e) {
-    return `ERROR: Local JARVIS agent unreachable at ${AGENT_URLS.join(" or ")}. Make sure it's running. (${
+    return `ERROR: Local NEXUS agent unreachable at ${AGENT_URLS.join(" or ")}. Make sure it's running. (${
       e instanceof Error ? e.message : String(e)
     })`;
   }
