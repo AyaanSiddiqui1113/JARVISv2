@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Voice layer for NEXUS:
- *  - continuous speech recognition with the wake word "jarvis"
+ *  - continuous speech recognition of user commands
  *  - push-to-talk (bypasses the wake word)
  *  - spoken replies via the browser speech synthesis engine
  */
