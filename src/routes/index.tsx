@@ -4,10 +4,12 @@ import { JarvisChat } from "@/components/JarvisChat";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "J.A.R.V.I.S. — Personal AI Assistant" },
-      { name: "description", content: "JARVIS-style AI that controls your computer through a local helper agent." },
-      { property: "og:title", content: "J.A.R.V.I.S." },
-      { property: "og:description", content: "Your personal AI computer assistant." },
+      { title: "NEXUS — Neural Executive eXchange Utility System" },
+      { name: "description", content: "NEXUS OS — an AI assistant that controls your computer, browser and NEXUS devices through a local helper agent." },
+      { property: "og:title", content: "NEXUS — Neural Executive eXchange Utility System" },
+      { property: "og:description", content: "NEXUS OS — your personal AI computer assistant and device control hub." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Index,

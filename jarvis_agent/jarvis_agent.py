@@ -1251,7 +1251,7 @@ async def tool_device_command(request: Request):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
-    print("  J.A.R.V.I.S. Local Agent")
+    print("  N.E.X.U.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
     print("  Browser cowork: ask NEXUS to 'open a browser and...'")
     print("  ESP/IoT: register projects in the web UI or by describing them to NEXUS.")

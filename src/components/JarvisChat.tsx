@@ -23,7 +23,7 @@ export function JarvisChat() {
     {
       role: "assistant",
       content:
-        "**Online.** All systems nominal, sir. Local agent link initializing — say the word and I'll get to work.",
+        "**NEXUS online.** All systems nominal, sir. Local agent link initializing — say the word and I'll get to work.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -175,9 +175,9 @@ export function JarvisChat() {
         <div className="flex items-center gap-4">
           <ArcReactor active={busy} size={48} />
           <div>
-            <h1 className="font-display text-xl text-glow text-primary">J.A.R.V.I.S.</h1>
+            <h1 className="font-display text-xl text-glow text-primary">N.E.X.U.S.</h1>
             <p className="text-xs text-muted-foreground tracking-widest">
-              JUST A RATHER VERY INTELLIGENT SYSTEM
+              NEURAL EXECUTIVE eXCHANGE UTILITY SYSTEM
             </p>
           </div>
         </div>
@@ -321,7 +321,7 @@ function MessageBubble({ msg }: { msg: Msg }) {
         }`}
       >
         <div className="text-[10px] font-display tracking-widest mb-1 text-primary/70">
-          {isUser ? "USER" : "JARVIS"}
+          {isUser ? "USER" : "NEXUS"}
         </div>
         <div className="prose prose-sm prose-invert max-w-none [&_*]:text-foreground [&_code]:text-accent [&_a]:text-primary">
           <ReactMarkdown>{msg.content || "*…*"}</ReactMarkdown>
