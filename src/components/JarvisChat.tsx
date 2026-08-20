@@ -175,9 +175,9 @@ export function JarvisChat() {
         <div className="flex items-center gap-4">
           <ArcReactor active={busy} size={48} />
           <div>
-            <h1 className="font-display text-xl text-glow text-primary">N.E.X.U.S.</h1>
+            <h1 className="font-display text-xl text-glow text-primary">NEXUS</h1>
             <p className="text-xs text-muted-foreground tracking-widest">
-              NEURAL EXECUTIVE eXCHANGE UTILITY SYSTEM
+              Neural Executive eXchange Utility System
             </p>
           </div>
         </div>
