@@ -201,7 +201,7 @@ export function JarvisChat() {
             to="/devices"
             className="panel px-3 py-1.5 font-display tracking-wider text-primary hover:bg-primary/10"
           >
-            ESP / DEVICES
+            NEXUS DEVICES
           </Link>
         </div>
       </header>
