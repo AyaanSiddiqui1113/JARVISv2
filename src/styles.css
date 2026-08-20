@@ -35,7 +35,7 @@
 :root {
   --radius: 0.5rem;
 
-  /* JARVIS holographic palette */
+  /* NEXUS holographic palette */
   --background: oklch(0.16 0.04 240);
   --foreground: oklch(0.94 0.04 210);
 

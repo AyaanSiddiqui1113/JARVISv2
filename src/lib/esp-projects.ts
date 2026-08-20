@@ -1,5 +1,5 @@
 // Generic ESP / IoT project registry.
-// The local JARVIS agent is the single source of truth: it stores the project
+// The local NEXUS agent is the single source of truth: it stores the project
 // definitions on disk (esp_projects.json) and performs every LAN HTTP request.
 // The browser never talks to an ESP directly.
 import { fetchAgent } from "@/lib/jarvis-agent";

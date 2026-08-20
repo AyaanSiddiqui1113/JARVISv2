@@ -15,14 +15,14 @@ import {
 export const Route = createFileRoute("/devices")({
   head: () => ({
     meta: [
-      { title: "ESP / Devices — J.A.R.V.I.S. IoT Control" },
+      { title: "NEXUS Devices — ESP / IoT Control" },
       {
         name: "description",
         content:
-          "Register, edit and test ESP8266/ESP32 projects that JARVIS can control over your local network.",
+          "Register, edit and test ESP8266/ESP32 projects that NEXUS can control over your local network.",
       },
-      { property: "og:title", content: "ESP / Devices — J.A.R.V.I.S." },
-      { property: "og:description", content: "Generic ESP/IoT project registry for JARVIS." },
+      { property: "og:title", content: "NEXUS Devices — ESP / IoT" },
+      { property: "og:description", content: "Generic ESP/IoT project registry for NEXUS." },
     ],
   }),
   component: DevicesPage,
@@ -96,7 +96,7 @@ function DevicesPage() {
           <Link to="/" className="text-primary hover:text-accent">
             <ArrowLeft size={18} />
           </Link>
-          <h1 className="font-display text-xl text-glow text-primary">ESP / DEVICES</h1>
+          <h1 className="font-display text-xl text-glow text-primary">NEXUS DEVICES</h1>
         </div>
         <div className="flex gap-2">
           <button onClick={refresh} className="panel px-3 py-2 text-xs font-mono text-primary hover:bg-primary/10">
@@ -118,7 +118,7 @@ function DevicesPage() {
         {loading && <p className="text-sm text-muted-foreground font-mono">Loading from local agent…</p>}
         {!loading && projects.length === 0 && (
           <div className="panel p-6 text-sm text-muted-foreground">
-            No ESP projects registered yet. Create one here, or just tell JARVIS in chat:{" "}
+            No ESP projects registered yet. Create one here, or just tell NEXUS in chat:{" "}
             <span className="text-primary font-mono">
               "I made a project called Smart Aquarium at 192.168.1.42. POST /pump/on turns the pump on…"
             </span>

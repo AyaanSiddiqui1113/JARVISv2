@@ -1,20 +1,20 @@
 """
-JARVIS Local Helper Agent
+NEXUS Local Helper Agent
 =========================
-A tiny FastAPI server that JARVIS (the web UI) calls to actually control
+A tiny FastAPI server that NEXUS (the web UI) calls to actually control
 your computer. It runs ENTIRELY on your machine — nothing is sent to the
-cloud beyond what JARVIS itself decides.
+cloud beyond what NEXUS itself decides.
 
 ⚠️  SECURITY WARNING ⚠️
 This agent will execute ANY shell command the web UI tells it to. Only run it
-on a machine you trust, only while you're using JARVIS, and never expose port
+on a machine you trust, only while you're using NEXUS, and never expose port
 7337 to the public internet. By default it binds to 127.0.0.1 only.
 
 Setup
 -----
 1. pip install fastapi uvicorn
 2. python jarvis_agent.py
-3. Leave it running. Open the JARVIS web app — the "LOCAL AGENT" indicator
+3. Leave it running. Open the NEXUS web app — the "LOCAL AGENT" indicator
    should turn cyan.
 
 Optional: set JARVIS_TOKEN env var to require an auth header (future).
@@ -234,7 +234,7 @@ CURSOR_OVERLAY_JS = r"""
     'border:2px solid #fff'
   ].join(';');
   const label = document.createElement('div');
-  label.textContent = 'JARVIS';
+  label.textContent = 'NEXUS';
   label.style.cssText = 'position:absolute;left:26px;top:6px;font:bold 10px monospace;color:#fff;text-shadow:0 0 4px #ff0000;letter-spacing:2px;';
   c.appendChild(label);
   document.documentElement.appendChild(c);
@@ -580,7 +580,7 @@ def _match_desktop_target(text: str, nth: int = 0):
         )
     return matches[max(0, min(nth, len(matches) - 1))]
 
-app = FastAPI(title="JARVIS Local Agent")
+app = FastAPI(title="NEXUS Local Agent")
 
 # CORS — allow the web UI to call us from any origin (you control the browser).
 app.add_middleware(
@@ -591,7 +591,7 @@ app.add_middleware(
 )
 
 # Chrome's Private Network Access requires these headers so an HTTPS page
-# (the JARVIS web UI) is allowed to call http://127.0.0.1 / localhost.
+# (the NEXUS web UI) is allowed to call http://127.0.0.1 / localhost.
 @app.middleware("http")
 async def private_network_access(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -1251,11 +1251,11 @@ async def tool_device_command(request: Request):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
-    print("  J.A.R.V.I.S. Local Agent")
+    print("  N.E.X.U.S. Local Agent")
     print("  Listening on http://127.0.0.1:7337")
-    print("  Browser cowork: ask JARVIS to 'open a browser and...'")
-    print("  ESP/IoT: register projects in the web UI or by describing them to JARVIS.")
-    print("  Desktop cowork: ask JARVIS to inspect/click/type in desktop apps.")
-    print("  Keep this window open while using the JARVIS web UI.")
+    print("  Browser cowork: ask NEXUS to 'open a browser and...'")
+    print("  ESP/IoT: register projects in the web UI or by describing them to NEXUS.")
+    print("  Desktop cowork: ask NEXUS to inspect/click/type in desktop apps.")
+    print("  Keep this window open while using the NEXUS web UI.")
     print("=" * 60)
     uvicorn.run(app, host="127.0.0.1", port=7337, log_level="info")
