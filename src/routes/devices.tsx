@@ -96,7 +96,7 @@ function DevicesPage() {
           <Link to="/" className="text-primary hover:text-accent">
             <ArrowLeft size={18} />
           </Link>
-          <h1 className="font-display text-xl text-glow text-primary">ESP / DEVICES</h1>
+          <h1 className="font-display text-xl text-glow text-primary">NEXUS DEVICES</h1>
         </div>
         <div className="flex gap-2">
           <button onClick={refresh} className="panel px-3 py-2 text-xs font-mono text-primary hover:bg-primary/10">
