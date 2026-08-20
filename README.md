@@ -1,8 +1,8 @@
-# Your PC Companion
+# NEXUS — Neural Executive eXchange Utility System
 
-Hey so i want to create a project that is like this, it is an app that is something like jarvis it can control all the features of a computer like opening apps files searching through your files runing commands installing things from the web BASICALLY IT SHLD BE ABLE TO DO EVERYTHING A NORMAL HUMAN CAN DO IN A PC ok. it must be JARVIS
-Approach: Web Jarvis UI + local helper agent
-Voice: Text chat only for now
+NEXUS OS is an AI assistant that can do anything a human can do on a PC: open apps and files, search the filesystem, run commands, install software, cowork in the browser and control NEXUS devices (NEXUS Rover, NEXUS Cannon, NEXUS Memory, NEXUS Hub).
+
+Approach: NEXUS web UI + local helper agent, with voice input and spoken replies.
 
 This project was built with [Lovable](https://lovable.dev).
 
